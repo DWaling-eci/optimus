@@ -66,19 +66,36 @@ suite: 28 tests across `tests/test_chunk.py` (7), `tests/test_walk.py` (7),
 smokes (`tests/test_smoke_index.py`, `tests/test_two_stage_search.py`). All green
 on WSL2 venv.
 
-### WSL2 setup (one-time)
+### GPU stack (post-close-out 2026-05-13)
+
+The spike-1 server runs on GPU per `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md` Phase 0. The wrapper patch (1-line `d_emb.to(device, dtype)` in MaxSim matmul) is validated against the probe's `spike/pre-m1-gpu-feasibility/server-stdio-gpu.py` artifact. Device autodetect via `server_stdio.select_device()`; CPU fallback retained but unexercised in the empirical runs.
+
+requirements.txt switched to `torch==2.5.1+cu121` and the matching cu12 wheel stack. Persistent venv at `~/optimus-spike-gpu-venv/` is reused across all 24 Phase-2 empirical sessions.
+
+### WSL2 setup (one-time, GPU stack)
 
 ```bash
 sudo apt install -y python3.12-venv build-essential
-python3 -m venv ~/optimus-spike-venv
-source ~/optimus-spike-venv/bin/activate
-python -m pip install --only-binary :all: -r /mnt/c/_Source/optimus/spike/pre-m1-retrieval/requirements.txt
+python3 -m venv ~/optimus-spike-gpu-venv
+source ~/optimus-spike-gpu-venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --only-binary :all: \
+    --extra-index-url https://download.pytorch.org/whl/cu121 \
+    -r /mnt/c/_Source/optimus/spike/pre-m1-retrieval/requirements.txt
 ```
+
+After install, confirm GPU visibility:
+
+```bash
+python -c "import torch; print(f'cuda={torch.cuda.is_available()} device={torch.cuda.get_device_name(0)}')"
+```
+
+Expected: `cuda=True device=<your GPU>`.
 
 ### Build the index
 
 ```bash
-source ~/optimus-spike-venv/bin/activate
+source ~/optimus-spike-gpu-venv/bin/activate
 cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
 python indexer.py <test-target-root> <out-dir>
 ```
@@ -102,7 +119,7 @@ The server is stdio-only, single-client. It registers one tool: `optimus_search(
 ### Run the test suite
 
 ```bash
-source ~/optimus-spike-venv/bin/activate
+source ~/optimus-spike-gpu-venv/bin/activate
 cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
 python -m pytest tests/ -v
 ```
@@ -175,7 +192,7 @@ now scores nearly all of the indexed content, so the measurement is no longer
 
 Reproducer (post-revision):
 ```bash
-source ~/optimus-spike-venv/bin/activate
+source ~/optimus-spike-gpu-venv/bin/activate
 cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
 python diag-tokens.py ~/.optimus-spike/index-msrepo-r600
 ```

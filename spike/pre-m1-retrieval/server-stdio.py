@@ -39,6 +39,17 @@ per query on the top-100 candidate batch. Pinned via test_rerank_bsize.py
 """
 
 
+def select_device() -> str:
+    """Autodetect compute device. Returns 'cuda' if available, else 'cpu'.
+
+    M1.0 production direction: GPU default with CPU fallback. Spike-1 close-out
+    runs on GPU per `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md`
+    section 3; CPU path is retained but unexercised in the empirical runs.
+    """
+    import torch
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
 def confine_path(user_path: str, target_root: Path) -> Path:
     """Resolve user-supplied path; raise ValueError if it escapes target_root.
 
@@ -160,7 +171,12 @@ def two_stage_search(query: str, index_dir: Path, top_k: int = 5):
 
     reranked = []
     for rec, d_emb in zip(candidate_records, d_emb_list):
-        sim = q_colbert[0] @ d_emb.T
+        # GPU patch (probe-validated 2026-05-13, top-1 paths match CPU baseline):
+        # colbert-ai 0.2.22's docFromText(keep_dims=False) returns per-doc tensors
+        # on CPU, while q_colbert stays on GPU -- align device + dtype before matmul.
+        # On CPU this .to() is a no-op (tensors already aligned).
+        d_aligned = d_emb.to(device=q_colbert.device, dtype=q_colbert.dtype)
+        sim = q_colbert[0] @ d_aligned.T
         score = float(sim.max(dim=-1).values.sum().item())
         reranked.append((rec, score))
     reranked.sort(key=lambda t: t[1], reverse=True)
@@ -196,6 +212,19 @@ def main() -> None:
     # Warm caches at startup so the first tool call isn't a multi-second cold load
     _ensure_models()
     _ensure_index(index_dir)
+
+    # Log device selection to stderr (stdout reserved for JSON-RPC frames)
+    import torch
+    device = select_device()
+    vram_gb = (
+        torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
+        if device == "cuda"
+        else 0.0
+    )
+    print(
+        f"[spike-1 server] device={device} vram_total_gb={vram_gb:.2f}",
+        file=sys.stderr,
+    )
 
     app = FastMCP("optimus-spike-1")
 

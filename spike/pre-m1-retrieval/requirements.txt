@@ -1,24 +1,25 @@
-# Spike-1 install-probe pins. See README "Install probe findings" for the full
-# story; short version:
-#   - RAGatouille 0.0.9+ pulls in langchain/llama-index/openai/Flask (~134 pkgs)
-#   - RAGatouille 0.0.8.x and 0.0.7.x exact-pin colbert-ai==0.2.19, which is
-#     YANKED from PyPI as of 2026-05-13. Clean wrapper versions are unreachable.
-#   - Therefore: drop RAGatouille, use colbert-ai directly. The decision record's
-#     pipeline (Nomic dense -> top-100 -> ColBERT rerank -> top-5) only needs
-#     ColBERT's MaxSim scoring, not RAGatouille's index/search machinery.
+# Spike-1 GPU stack (post-2026-05-13 close-out per
+# docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md Phase 0).
+#
+# Forked from spike/pre-m1-gpu-feasibility/requirements-gpu.txt which the
+# 2026-05-13 GPU feasibility probe validated end-to-end (19x speedup on RTX
+# A500 Laptop, top-1 paths match CPU baseline, ~1.47 GB VRAM peak).
+#
+# CUDA wheel choice: cu121 (forward-compatible with the host's 12.8 runtime per
+# CUDA's enhanced compatibility for major version 12.x). Driver 573.44 (host) /
+# 570.170 (WSL2) -- both well above the 525+ minimum cu121 wheels need.
+#
+# Why the explicit `+cu121` local version specifier:
+#   `--extra-index-url` is a FALLBACK, so PyPI wins on higher versions. The
+#   `+cu121` local tag is only published on the pytorch cu121 index, forcing
+#   pip to fetch from there. Locked at torch 2.5.1 (the latest cu121 build
+#   available for py3.12 as of 2026-05-13 -- torch 2.6.0+ shipped only as
+#   cu124/cu126/cu128).
 #
 # Mini Shai-Hulud contamination check: dry-run with this set against the
 # attack-window contamination list (mistralai, guardrails-ai, lightning
-# 2.6.2/2.6.3) before installing.
-#
-# Linux note: torch's default Linux wheel pulls 19+ NVIDIA/CUDA packages
-# (cublas, cudnn, nccl, triton, cuda-toolkit, etc.) -- 5-10 GB of GPU runtime
-# libs not needed for spike-1's retrieval-behavior validation (spike-2 also
-# ran CPU-only). The PyPI index below resolves torch to CPU-only wheels and
-# elides the NVIDIA stack. Per brief §1 implementation-tactics authority;
-# the locked decision record does not mandate GPU. Production GPU/CPU choice
-# is M1.0 architecture spike's call, not spike-1's.
---extra-index-url https://download.pytorch.org/whl/cpu
+# 2.6.2/2.6.3) before installing. See [[shai-hulud-pip-install-discipline]].
+--extra-index-url https://download.pytorch.org/whl/cu121
 
 sentence-transformers>=2.5.0
 colbert-ai>=0.2.20
@@ -27,7 +28,10 @@ colbert-ai>=0.2.20
 # 4.x; sentence-transformers accepts >=4.41.0,<6.0.0 so this is safe.
 transformers>=4.41.0,<5
 einops>=0.7.0
-torch>=2.1.0
+# Explicit +cu121 local tag forces resolution from the pytorch cu121 index.
+torch==2.5.1+cu121
+# Cap numpy to <3 (torch 2.5.x is built against numpy 2.x; numpy 3 not supported)
+numpy>=1.26.0,<3
 psutil>=5.9.0
 pytest>=8.0.0
 mcp>=1.0.0
