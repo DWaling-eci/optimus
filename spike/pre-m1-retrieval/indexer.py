@@ -40,8 +40,12 @@ def walk_target(target_root: Path):
 
 
 def chunk_file(content: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
-    """Yield (start_offset, chunk_text) tuples for the file content."""
-    raise NotImplementedError("session 2: implement char-window chunking (or AST-aware variant)")
+    """Yield (start_offset, chunk_text) tuples for the file content.
+
+    Char-window split, no overlap. Deterministic.
+    """
+    for start in range(0, len(content), chunk_size):
+        yield start, content[start:start + chunk_size]
 
 
 def embed_chunks(chunks):
