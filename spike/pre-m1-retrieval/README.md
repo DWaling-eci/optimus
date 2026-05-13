@@ -168,6 +168,59 @@ verdict section; do NOT silently change the protocol):
 spike's measurement integrity comes from running the same retrieval surface
 across all conditions; tuning mid-spike contaminates the comparison.
 
+### PRIORITY 1 next-session: protocol revision (the 46% truncation finding)
+
+After the working pipeline landed and the 11-14s/query observation surfaced, a
+follow-up diagnostic (`diag-tokens.py`) revealed the latency is masking a real
+setup defect. The numbers, measured against the live 3418-chunk ms-superrepo
+index:
+
+| Metric | Value | Source |
+|---|---|---|
+| ColBERTv2 `doc_maxlen` | **220 tokens** | `ColBERTConfig()` default |
+| Mean chunk size | 1325 chars / **383 tokens** | indexer at `chunk_size=1500` |
+| Chars per token (Kotlin code) | 3.46 | empirical |
+| Chunks exceeding doc_maxlen | **2,979 / 3,418 (87.2%)** | tokenize-and-count |
+| Tokens silently truncated at rerank | **604,036 (46.2% of all indexed tokens)** | empirical |
+| ColBERT query-time `bsize` (ours) | 8 | hardcoded in `Checkpoint.docFromText(..., bsize=8)` |
+| ColBERT default `bsize` | 32 | `ColBERTConfig()` default |
+
+**Translation:** Nomic dense ranks against the full 1500-char chunk. ColBERT
+rerank only sees the first ~660 chars of each candidate. The other half is
+indexed and embedded but contributes zero to the final score. We are paying
+full indexing cost to produce ~46% dead weight at the measurement that
+actually matters.
+
+**Planned revision (deferred to a fresh session for thermal reasons):**
+
+1. **chunk_size 1500 -> ~700 chars** (~210 tokens; just under ColBERT's
+   doc_maxlen with margin for special tokens). Stays under truncation
+   boundary. ~2x chunks (~6800 instead of 3418). Re-indexing time ~80 min
+   (still under brief §2 trigger-2 2-hour soft budget).
+2. **ColBERT `bsize` 8 -> 32** in `two_stage_search()`'s `docFromText`
+   call. Matches ColBERT's own default. ~4x fewer forward passes per query.
+3. Re-smoke against the new index; expected per-query latency **2-3 s**
+   (within brief §5 budget).
+4. Document the revision as a session-3 methodology revision in the eventual
+   spike-1 retrieval report; cross-condition comparability is preserved
+   because the same protocol is applied across no-Optimus / Optimus +
+   accurate / Optimus + drifted conditions.
+
+**Reproducer:** `diag-tokens.py` (committed at the spike-workspace level).
+Run from the WSL2 venv after the ms-superrepo index has been built:
+
+```bash
+source ~/optimus-spike-venv/bin/activate
+cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
+python diag-tokens.py
+```
+
+**Host resources (no constraint, FYI):** WSL2 reported 20 CPU cores, 10.4 GB
+RAM, 9.0 GB available at finding time. The bottleneck is not cores or
+memory; it is the ColBERT forward-pass count at small `bsize` against
+oversized chunks. Raising container resource caps would not move the needle;
+the levers above would.
+
 ### MCP-client smoke artifacts
 
 - `results/smoke-msrepo.py` (gitignored) -- the smoke client used to capture
