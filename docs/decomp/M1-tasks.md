@@ -20,14 +20,14 @@ filled-at: null
 
 **Inputs:**
 - v2 scope (CHARTER Decision 1, 3, 4)
-- v1 retrieval/reranker/spaCy/garp components (salvage list)
-- Pre-M1 spike findings (spike-1 H1/H2/H3/H4 + spike-2 transport/concurrency feasibility). Spike-1 H4 specifically gates the `spacy_pipeline` keep/drop call below.
+- v1 retrieval/reranker/garp components (salvage list -- spaCy excluded per `docs/decisions/spacy-keep-drop.md`).
+- Pre-M1 spike findings (spike-1 H1/H2/H3 + spike-2 transport/concurrency feasibility). spaCy keep/drop is no longer a spike output -- see `docs/decisions/spacy-keep-drop.md` for the locked DROP verdict and revision bar.
 
 **Output:** `ARCHITECTURE.md` containing:
 - Module list under `src/optimus/`, with one-line purpose per module
 - Cross-module dependency graph
 - Decision section: `optimus_resolve` retained vs dropped vs merged
-- Decision section: `spacy_pipeline` scope (NLP for what, given no memory work)
+- (`spacy_pipeline` is NOT a Phase 1.0 decision -- DROPPED per `docs/decisions/spacy-keep-drop.md`. ARCHITECTURE.md's module list does not include `spacy_pipeline.py`.)
 - **Validate locked transport + protocol-version against spike findings.** `docs/decisions/transport-and-discovery.md` locks Unix socket (Linux/macOS/WSL2) + named pipe (Windows), the `.mcp.json` schema, 500ms+200ms liveness probe, and `SO_PEERCRED` / `GetNamedPipeClientProcessId` auth. M1.0 has **hybrid revision authority per the locked record** — revise ONLY on hard roadblock surfaced during implementation, via normal decision-record revision (PR + sign-off + `optimus_protocol_version` bump). Otherwise: confirm the locks hold and proceed.
 - **Decision section: concurrency model and request queueing.** How does the container handle parallel `optimus_grep`/`optimus_search` calls from multiple clients? Worker pool size default. Backpressure strategy. Failure-mode contract for "busy, retry."
 - **Decision section: singleton lifecycle and discovery.** Socket location and stale-state cleanup (no pid-file; see `docs/decisions/transport-and-discovery.md`), container-not-running detection from the MCP client side.
@@ -51,7 +51,7 @@ Mirror the v1 M0.2 pattern (stubs + import tests) but driven by the **actual** m
 ## Phase 1.1 -- Leaf Modules
 
 - TODO: extract from Phase 1.1 section.
-- **`spacy_pipeline.py` is conditional**: do not begin implementation until Phase 1.0 Architecture Spike resolves the keep/drop call (gated on spike-1 H4 evidence per `docs/decomp/pre-M1-spikes.md`). Other leaf modules (config, garp_shell) are parallel-eligible without the gate.
+- **`spacy_pipeline.py` is NOT BUILT** per `docs/decisions/spacy-keep-drop.md` (DROP verdict, locked 2026-05-13). Phase 1.1 module list omits it. v2 has no runtime, build-time, or install-time dependency on `spacy`. Other leaf modules (config, garp_shell) proceed normally.
 
 ## Phase 1.2 -- Mid-Tier Modules
 
@@ -62,7 +62,7 @@ Mirror the v1 M0.2 pattern (stubs + import tests) but driven by the **actual** m
 
 - TODO: extract from Phase 1.3 section.
 - **Eval corpus authoring per `docs/decisions/eval-corpus-methodology.md`** -- corpus stub committed before ranker implementation starts.
-- **`project_root` parameter added to `optimus_search` contract** -- mirror garp's `--startdir` scoping for the CE/spaCy retrieval surface.
+- **`project_root` parameter added to `optimus_search` contract** -- mirror garp's `--startdir` scoping for the retrieval surface.
 - **Input sanitization at MCP boundary** -- `--pathscope` / `--startdir` and any other agent-string parameters validated before reaching subprocess.
 
 ## Phase 1.4 -- Server Entrypoint + Singleton Lifecycle + Smoke Test

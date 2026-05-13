@@ -13,7 +13,8 @@
 - **H1:** Retrieval-only Optimus + a hand-authored DIRECTORY_INDEX.md raises optimus tool-call ratio and reduces broad sweeps relative to a no-Optimus baseline.
 - **H2:** Killing memory does not leave a retrieval gap that only memory was filling.
 - **H3 (dir-index drift resilience):** the hand-authored DIRECTORY_INDEX.md remains useful under realistic edit velocity. Intentionally introduce drift mid-task (add a file, rename a dir) and measure whether agent behavior degrades. If a stale dir-index is worse than no dir-index, `optimus_doctor` is load-bearing infrastructure, not convenience.
-- **H4 (spaCy preprocessing contribution):** Adding spaCy preprocessing (tokenization / lemmatization / stopword filtering on queries before they hit the embedder) does NOT materially improve retrieval quality vs raw query -> embedder. Measured by comparing Recall@10 / nDCG@10 on the spike-1 task corpus with spaCy-on vs spaCy-off on identical retrieval inputs. **If H4 holds (no material improvement), spaCy is dropped** per CHARTER Decision 5's "salvage-driven, not nostalgia-driven" principle. **If H4 fails (spaCy materially improves results), spaCy is kept** in the retrieval pipeline and its scope is documented as part of the Architecture Spike output.
+
+**H4 (spaCy preprocessing contribution): RETIRED 2026-05-13.** The spaCy keep/drop call was originally framed as an empirical spike-1 measurement (Recall@10 / nDCG@10 with spaCy on vs off). It is **retired** here and replaced by `docs/decisions/spacy-keep-drop.md`, which lands the verdict (DROP) sourced from the literature -- the empirical test was unnecessary given (a) Nomic CodeRankEmbed's model-card prescribed contract (raw query + fixed prefix; silent on further preprocessing), (b) ColBERTv2's internal tokenization + `[mask]` padding mechanism (upstream stripping mechanically harmful), and (c) the closest direct ablation (CodeSearchNet identifier normalization, ~50% relative MRR loss). See that record for the full evidence and revision bar.
 
 **Definition of Done:**
 
@@ -23,8 +24,7 @@
   - Baseline (no Optimus, no dir-index)
   - Optimus + accurate dir-index
   - Optimus + drifted dir-index (drift introduced mid-task)
-- **H4 measurement:** identical retrieval-input pair runs on the spike-1 task corpus with spaCy preprocessing on vs off; Recall@10 / nDCG@10 captured per run for direct comparison.
-- Go/no-go report at `docs/spikes/spike-1-retrieval-report.md` covering all four hypotheses with evidence.
+- Go/no-go report at `docs/spikes/spike-1-retrieval-report.md` covering H1 + H2 + H3 with evidence.
 
 **Test target selection (spike-prep step):**
 
@@ -51,11 +51,12 @@ If the chosen project's requirements shift mid-spike-development, swap to a diff
 
 **Gate logic:**
 
-- H1 + H2 + H3 + H4 all confirm (H4 = "spaCy adds no material value") -> spike-1 passes. **Current default holds:** `optimus_doctor` drift detection runs default-on in host projects with a config-driven opt-out (per TR-07). **spaCy is dropped** from the retrieval pipeline (CHARTER Decision 5).
+- H1 + H2 + H3 all confirm -> spike-1 passes. **Current default holds:** `optimus_doctor` drift detection runs default-on in host projects with a config-driven opt-out (per TR-07).
 - H1 fails (no behavior change) -> the entire v2 thesis is suspect; pause and replan.
 - H2 fails (memory gap exists) -> revisit CHARTER Decision 3 with Dustin before proceeding.
 - H3 fails (stale dir-index proves worse than no dir-index) -> the opt-out is **removed**; `optimus_doctor` drift detection becomes **mandatory CI integration** with no opt-out. Update TR-07 in `docs/requirements/REQUIREMENTS.md` and Phase 2.3 in `docs/decomp/M2-tasks.md` accordingly.
-- H4 fails (spaCy materially improves Recall@10 / nDCG@10) -> spaCy is **kept** as a retrieval preprocessing layer; its scope (what it preprocesses, where it sits in the pipeline) is documented in the Phase 1.0 Architecture Spike output. Update `docs/glossary.md` spaCy entry and `docs/decomp/M1-tasks.md` Phase 1.1 accordingly.
+
+(spaCy keep/drop is no longer a spike-1 gate -- see `docs/decisions/spacy-keep-drop.md`. Verdict locked: DROP. Revision bar: evidence-backed roadblock surfaced by M6 dogfood-eval or the M1.3 graded corpus.)
 
 ## Spike-2: Singleton Container Feasibility
 

@@ -98,13 +98,9 @@ Optimus retrieval pipeline (locked):
 
 spaCy is a Python NLP library. v1 used it for tokenization, entity extraction, and dependency parsing -- primarily in service of the memory feature (extracting structured info from session text).
 
-**v2 has no memory feature** (Decision 3), so the obvious v1 consumer is gone. The model stack itself (Nomic CodeRankEmbed + ColBERTv2 via RAGatouille) is locked in `docs/decisions/secure-singleton-mcp-baseline.md`; that record is silent on spaCy. The spaCy retain/drop call therefore remains gated on **Pre-M1 spike-1 hypothesis H4** (per CHARTER Decision 5 and `docs/decomp/pre-M1-spikes.md`), narrowly scoped to whether spaCy adds value as a preprocessing layer **ahead of** the locked Nomic + ColBERTv2 pipeline (not as a substitute for it). Provisional candidates:
+**v2 has no spaCy.** **DROPPED 2026-05-13** per `docs/decisions/spacy-keep-drop.md`. The decision was originally framed as the verdict of spike-1 hypothesis H4 (empirical Recall@10 / nDCG@10 with spaCy on vs off) -- H4 is **retired** and replaced by a research-backed DROP verdict sourced from the literature (CodeSearchNet identifier-normalization ablation showing ~50% MRR loss, EMNLP 2024 dense-retrieval preprocessing-hurts findings, Nomic CodeRankEmbed model-card prescribed contract, ColBERTv2 internal tokenization mechanism).
 
-- Query preprocessing for `optimus_search` (lemmatization, stop-word filtering) feeding into Nomic.
-- Tokenization for proximity-distance calculations in retrieval.
-- Possibly nothing -- if H4 holds (no material Recall@10 / nDCG@10 improvement on the spike-1 task corpus with spaCy on vs off), the dependency is dropped.
-
-**Gating evidence (H4):** spike-1 runs identical retrieval inputs with spaCy-on vs spaCy-off and compares Recall@10 / nDCG@10 directly. H4-holds drops spaCy; H4-fails keeps spaCy and its scope is documented in the Phase 1.0 Architecture Spike output. This is the only retrieval-side spike question still open; the rest of the pipeline is locked.
+v2 has no runtime, build-time, or install-time dependency on `spacy`. The only query transformation in the retrieval path is the Nomic CodeRankEmbed task-instruction prefix (a fixed string, not a library). Revision bar: evidence-backed roadblock surfaced by M6 dogfood-eval or the M1.3 graded corpus.
 
 ---
 
@@ -233,4 +229,4 @@ The user-configured host directory that the singleton Optimus container bind-mou
 
 - **v1:** the original Optimus MCP server. Archived at `ref-projects/optimus/`. Supported product for Cursor-only memory users. Memory works there; v2 deliberately drops it.
 - **v2:** clean-repo restart. This project. Retrieval + standards layer + safe filesystem ops; no memory. Cursor + Claude Code only.
-- **The salvage relationship:** v2 lifts garp, the cross-encoder reranker, and spaCy from v1 as components but does NOT inherit v1's architecture, module list, or conventions. Don't read v1 as ground truth -- it's a parts shop, not a reference implementation. File-by-file salvage inventory in `docs/decomp/v1-salvage-inventory.md`.
+- **The salvage relationship:** v2 lifts garp and the v1 retrieval/reranker shape as components but does NOT inherit v1's architecture, module list, or conventions. spaCy is **explicitly NOT salvaged** per `docs/decisions/spacy-keep-drop.md`. Don't read v1 as ground truth -- it's a parts shop, not a reference implementation. File-by-file salvage inventory in `docs/decomp/v1-salvage-inventory.md`.

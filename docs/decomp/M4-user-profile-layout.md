@@ -12,7 +12,7 @@
   config.json          -- container config: parent-mount path, concurrency cap, log level (Founding Decision 7)
   docker-compose.yml   -- singleton container definition (host-singleton per Founding Decision 7)
   templates/           -- versioned standards templates (read by optimus_init; Founding Decision 4)
-  model-cache/         -- installer-populated ML model cache (Nomic CodeRankEmbed + ColBERTv2 via RAGatouille per secure-singleton-mcp-baseline.md, plus spaCy if retained). Container bind-mounts this RO at /root/.cache/huggingface. The container NEVER downloads models -- weights arrive here exclusively via the installer's SHA-verified download from the optimus repo's GitHub Releases.
+  model-cache/         -- installer-populated ML model cache (Nomic CodeRankEmbed + ColBERTv2 via RAGatouille per secure-singleton-mcp-baseline.md). Container bind-mounts this RO at /root/.cache/huggingface. The container NEVER downloads models -- weights arrive here exclusively via the installer's SHA-verified download from the optimus repo's GitHub Releases.
   telemetry/           -- tool-call ratio JSONL
   installer-state/     -- per-IDE install records, version tracking (written by M4.1 installer + per-IDE installers). Includes models-manifest.json -- the cached record of the model manifest currently on disk; the installer compares this against the current release's manifest to decide smart-skip vs download+verify+replace.
   optimus.sock         -- Unix socket (Linux/WSL2/macOS; see docs/decisions/transport-and-discovery.md). No pid-file; liveness detected via socket-aliveness probe.

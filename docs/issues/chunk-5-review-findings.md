@@ -39,7 +39,7 @@ The decision-record bones are now described as "exceptional" / "unusually tight"
 ### C. New small specs (mostly mechanical once decided)
 
 - EUR-06 `<URL>` placeholder — pick the install distribution endpoint.
-- Add a spaCy keep/drop hypothesis to spike-1 DoD. Currently the keep/drop call is gated on spike-1 evidence that spike-1 doesn't gather.
+- ~~Add a spaCy keep/drop hypothesis to spike-1 DoD. Currently the keep/drop call is gated on spike-1 evidence that spike-1 doesn't gather.~~ **RESOLVED 2026-05-13:** spaCy keep/drop landed as its own decision record at `docs/decisions/spacy-keep-drop.md` (DROP verdict, research-backed, no spike-1 measurement). pre-M1-spikes.md H4 retired; M1-tasks.md Phase 1.1 re-gated to "not built".
 - Add a machine-checkable `STATUS: AWAITING_PM_FILL` marker (or equivalent) to skeleton M1-M6 task bodies, so autonomous agent loops have a structural halt, not just prose.
 - One-page commit / PR / issue convention doc. Currently no contract; agents will be inconsistent.
 
