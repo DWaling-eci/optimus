@@ -30,13 +30,32 @@ in the spike report's methodology section.
 
 DEFAULT_INDEX_DIR = Path.home() / ".optimus-spike" / "index"
 
+MAX_FILE_BYTES = 1 * 1024 * 1024  # Cap per file to keep indexing bounded. 1 MB.
+
 
 def walk_target(target_root: Path):
     """Yield (file_path, content) for every readable text file under target_root.
 
-    Skip dotfiles and dot-directories. Skip binary files (encoding errors).
+    Skips: dotfiles, dot-directories, binary files (UnicodeDecodeError), files
+    over MAX_FILE_BYTES. Yielded paths are absolute.
     """
-    raise NotImplementedError("session 2: implement file walk + binary skip + encoding handling")
+    import os
+
+    target_root = target_root.resolve()
+    for dirpath, dirnames, filenames in os.walk(target_root):
+        # In-place filter dot-dirs so os.walk doesn't descend into them
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            if name.startswith("."):
+                continue
+            file_path = Path(dirpath) / name
+            try:
+                if file_path.stat().st_size > MAX_FILE_BYTES:
+                    continue
+                content = file_path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, OSError):
+                continue
+            yield file_path.resolve(), content
 
 
 def chunk_file(content: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
