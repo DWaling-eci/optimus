@@ -1,0 +1,35 @@
+# Spike-2 WSL2 Unix-socket transport compose.
+#
+# Run from inside WSL2 only -- bind-mount paths assume WSL2-native filesystem
+# semantics (Unix-socket creation on a 9P/DrvFs Windows-mount fails).
+#
+# Per docs/decisions/transport-and-discovery.md the socket lives at
+# ~/.optimus/optimus.sock on the host (WSL2). The container sees it at
+# /var/optimus/sockets/optimus.sock via bind mount of the host's ~/.optimus dir.
+#
+# Per docs/decomp/pre-M1-spikes-proposals.md Proposal 1, network_mode is
+# explicitly "none" -- the container has no networking interfaces. All
+# transport goes through the bind-mounted Unix socket.
+
+services:
+  optimus-spike-singleton:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: optimus-spike-singleton:0.1.0
+    container_name: optimus-spike-singleton
+    network_mode: none
+    user: "${HOST_UID:-1000}:${HOST_GID:-1000}"
+    # The container's UID must match the WSL2 host user's UID so SO_PEERCRED
+    # match passes. Pass via env: `UID=$(id -u) GID=$(id -g) docker compose up`.
+    volumes:
+      # Socket directory: host's ~/.optimus/ <-> container's /var/optimus/sockets/
+      - "${HOME}/.optimus:/var/optimus/sockets"
+      # Parent mount: host's ms-superrepo <-> container's /workspace
+      # MS_SUPERREPO env points at the WSL2 view (/mnt/c/ms-superrepo).
+      - "${MS_SUPERREPO:-/mnt/c/ms-superrepo}:/workspace:ro"
+    environment:
+      OPTIMUS_SOCKET_PATH: /var/optimus/sockets/optimus.sock
+      OPTIMUS_MOUNT_ROOT: /workspace
+      OPTIMUS_CONCURRENCY_CAP: "${OPTIMUS_CONCURRENCY_CAP:-4}"
+    restart: "no"

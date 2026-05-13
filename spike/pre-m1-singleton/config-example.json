@@ -1,0 +1,23 @@
+{
+  "_comment": "Example ~/.optimus/config.json shape for spike-2. NOT consumed directly by the spike server (which takes env vars); illustrates the production-side config the M0/M1 installer will write.",
+  "parent_mount": {
+    "host_path": "C:\\ms-superrepo",
+    "container_path": "/workspace",
+    "read_only": true
+  },
+  "transport": {
+    "linux_wsl2_socket": "~/.optimus/optimus.sock",
+    "windows_native_pipe": "\\\\.\\pipe\\optimus",
+    "mode": "0600"
+  },
+  "concurrency": {
+    "cap": 4,
+    "busy_retry_after_ms": 250
+  },
+  "discovery": {
+    "ping_timeout_ms_initial": 500,
+    "ping_timeout_ms_retry": 200,
+    "stale_endpoint_action": "remove_and_respawn"
+  },
+  "optimus_protocol_version": "1.0"
+}
