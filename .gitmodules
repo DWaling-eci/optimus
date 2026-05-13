@@ -1,0 +1,6 @@
+[submodule "tools/garp"]
+	path = tools/garp
+	url = https://github.com/dtwaling/garp.git
+[submodule "tools/ai-chat-report"]
+	path = tools/ai-chat-report
+	url = https://github.com/dtwaling/ai-chat-report.git

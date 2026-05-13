@@ -1,0 +1,11 @@
+# Claude Code per-machine settings (permission allowlists, etc.)
+.claude/settings.local.json
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor swap files
+*.swp
+*~
