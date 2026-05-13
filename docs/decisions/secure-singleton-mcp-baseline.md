@@ -19,7 +19,7 @@ If any of those four drift independently the singleton design fails at integrati
 ### 1. Model stack -- locked
 
 - **First-stage dense retrieval:** **Nomic CodeRankEmbed** (`nomic-ai/nomic-embed-text-v1.5`-class, code-specific). `trust_remote_code=True` is required and is acceptable under the trust model captured in section 6 below.
-- **Reranker:** **ColBERTv2 via RAGatouille** (`colbert-ir/colbertv2.0`). Late-interaction token scoring; runs materially faster than a traditional cross-encoder while delivering near-SOTA precision within the 8 GB container envelope (TR-04).
+- **Reranker:** **ColBERTv2 via colbert-ai direct** (`colbert-ir/colbertv2.0`, invoked through `colbert.modeling.checkpoint.Checkpoint`'s MaxSim scoring). Late-interaction token scoring; runs materially faster than a traditional cross-encoder while delivering near-SOTA precision within the 8 GB container envelope (TR-04). **Wrapper revised 2026-05-13** per `docs/decisions/colbert-wrapper-revision.md` -- mechanism preserved, only invocation surface changed; see that record for the roadblock evidence.
 - **Two-stage pipeline:** dense filter -> top-100 candidates -> ColBERTv2 rerank -> top-5 returned to the agent. Context-clamping at `top_k = 5` is intentional.
 
 This stack supersedes the prior "dual-CE vs single-CE pending M1.0" framing in `docs/glossary.md`. The dual-CE question is retired; Nomic + ColBERTv2 is the answer.
@@ -55,6 +55,8 @@ Dustin's call, verbatim: *"This is the stack and approach we will go for ... we 
 - The Nomic + ColBERTv2 stack, the bipartite concurrency model, and the isolation posture are **built as decided.** No "we'll pick at M1.0" framing applies any more.
 - **M1.0 Architecture Spike retains revision authority IF AND ONLY IF a hard roadblock surfaces** during implementation (e.g., RAGatouille incompatibility with the container env, Nomic load failure under the memory cap, an unforeseen MCP/Unix-socket integration block). Revision flows through normal decision-record revision (PR + sign-off + cross-doc propagation).
 - "Roadblock" means hard-blocking, evidence-backed: a measurement, a reproducible failure, or a concrete incompatibility -- not a preference shift. Soft preference revisions do not qualify.
+
+**First roadblock-driven revision landed 2026-05-13** -- see `docs/decisions/colbert-wrapper-revision.md` for evidence and scope. The revision modifies § 3.1 wrapper naming and § 3 illustrative-code rerank invocation only; all other locked clauses (model stack identity, isolation posture, bipartite concurrency, transport binding, model distribution / trust posture) remain in force. The roadblock-revision rule itself is unchanged.
 
 ### 6. Model Distribution & Trust Posture -- locked
 
@@ -125,7 +127,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Expected requirements.txt:
 # mcp==1.0.0
 # sentence-transformers>=2.5.0
-# ragatouille>=0.0.8
+# colbert-ai>=0.2.20            # direct; ragatouille wrapper retired per colbert-wrapper-revision.md
 # einops>=0.7.0
 # torch>=2.1.0
 
@@ -283,7 +285,8 @@ def ml_worker_loop(task_queue: mp.Queue, result_queue: mp.Queue):
     import torch
     import torch.nn.functional as F
     from sentence_transformers import SentenceTransformer
-    from ragatouille import RAGPretrainedModel
+    from colbert.modeling.checkpoint import Checkpoint
+    from colbert.infra import ColBERTConfig
 
     # 1. Load Nomic CodeRankEmbed.
     # trust_remote_code=True is acceptable under our trust model: the model files
@@ -296,8 +299,12 @@ def ml_worker_loop(task_queue: mp.Queue, result_queue: mp.Queue):
         trust_remote_code=True
     )
 
-    # 2. Load ColBERTv2 via RAGatouille
-    rerank_model = RAGPretrainedModel.from_pretrained("colbert-ir/colbertv2.0")
+    # 2. Load ColBERTv2 via colbert-ai direct (wrapper revised per
+    #    docs/decisions/colbert-wrapper-revision.md). Checkpoint exposes
+    #    queryFromText / docFromText for encoding and the MaxSim score
+    #    operator the rerank uses.
+    colbert_cfg = ColBERTConfig()  # defaults sufficient for in-memory rerank
+    reranker_ckpt = Checkpoint("colbert-ir/colbertv2.0", colbert_config=colbert_cfg)
 
     logger.info("ML Worker: Models loaded successfully. Awaiting tasks.")
 
@@ -324,10 +331,30 @@ def ml_worker_loop(task_queue: mp.Queue, result_queue: mp.Queue):
 
                 dense_candidates = [documents[i] for i in top_indices]
 
-                # --- STAGE 2: Late-Interaction Reranking (ColBERTv2) ---
-                results = rerank_model.rerank(query=query, documents=dense_candidates, k=len(dense_candidates))
-
-                ranked_docs = [{"document": r["content"], "score": r["score"]} for r in results]
+                # --- STAGE 2: Late-Interaction Reranking (ColBERTv2 MaxSim) ---
+                # Encode query + candidates; compute per-candidate MaxSim score;
+                # sort descending. Equivalent to RAGatouille's rerank() in the
+                # pre-bloat era but without the wrapper's transitive-dep surface.
+                # API notes (verified against colbert-ai 0.2.22):
+                #   - docFromText's public keep_dims values are True (padded
+                #     tensor), False (per-doc list), "flatten" (flat tensor +
+                #     doclens). keep_dims=False gives per-doc embeddings without
+                #     padding, so MaxSim doesn't have to mask out pad tokens.
+                #   - When bsize is set, docFromText returns a TUPLE wrapping
+                #     the result (return_text is splat-appended). Unwrap.
+                q_emb = reranker_ckpt.queryFromText([query])  # [1, Nq, dim]
+                docs_result = reranker_ckpt.docFromText(
+                    dense_candidates, bsize=16, keep_dims=False
+                )
+                d_emb_list = docs_result[0] if isinstance(docs_result, tuple) else docs_result
+                ranked_docs = []
+                for doc_text, d_emb in zip(dense_candidates, d_emb_list):
+                    # MaxSim: for each query token, max similarity across doc
+                    # tokens; sum across query tokens.
+                    sim = q_emb[0] @ d_emb.T  # [Nq, doc_tokens]
+                    score = float(sim.max(dim=-1).values.sum().item())
+                    ranked_docs.append({"document": doc_text, "score": score})
+                ranked_docs.sort(key=lambda r: r["score"], reverse=True)
                 result_queue.put((task_id, {"ranked_results": ranked_docs}))
 
             elif task_type == "shutdown":
@@ -513,7 +540,14 @@ if __name__ == "__main__":
 - `docs/decomp/M4-user-profile-layout.md` -- consumer of the installer-populated model-cache directory.
 - `docs/decomp/M1-tasks.md`, Phase 1.0 -- holds the narrow roadblock-driven revision authority over this record.
 - `docs/decomp/pre-M1-spikes.md` -- spike-2 validates the singleton + transport mechanics described here.
+- `docs/decisions/colbert-wrapper-revision.md` -- 2026-05-13 roadblock-driven revision to § 3.1 wrapper naming + § 3 illustrative-code rerank invocation. Mechanism preserved; only the wrapper changes.
 
 ## Status note
 
-Locked at refactor time. The stack (Nomic CodeRankEmbed + ColBERTv2 via RAGatouille), the bipartite concurrency model, the isolation posture (`network_mode: "none"`, RO parent mount, RO model-cache, RW scratch + sockets), the Unix-socket transport binding, and the install-time-only model distribution (with `trust_remote_code=True` acceptable under the installer-as-gatekeeper trust model) are all decided. M1.0 Architecture Spike retains revision authority ONLY for hard, evidence-backed roadblocks; absent such a roadblock, this is what gets built. The `server.py` block is an illustrative guide demonstrating the mechanics, NOT a literal template.
+Locked at refactor time. The stack (Nomic CodeRankEmbed + ColBERTv2 via colbert-ai direct -- RAGatouille wrapper retired 2026-05-13 per `docs/decisions/colbert-wrapper-revision.md`), the bipartite concurrency model, the isolation posture (`network_mode: "none"`, RO parent mount, RO model-cache, RW scratch + sockets), the Unix-socket transport binding, and the install-time-only model distribution (with `trust_remote_code=True` acceptable under the installer-as-gatekeeper trust model) are all decided. M1.0 Architecture Spike retains revision authority ONLY for hard, evidence-backed roadblocks; absent such a roadblock, this is what gets built. The `server.py` block is an illustrative guide demonstrating the mechanics, NOT a literal template.
+
+## Revision history
+
+| Date | Revision | Authority | Reference |
+|---|---|---|---|
+| 2026-05-13 | First roadblock-driven revision: ColBERTv2 wrapper changed from RAGatouille to colbert-ai direct. Mechanism preserved; trust-boundary surface reduced ~45% (134 -> 74 transitive packages). § 3.1 + § 3 illustrative code updated; all other clauses unchanged. | `docs/decisions/secure-singleton-mcp-baseline.md` § 5 + `docs/decisions/colbert-wrapper-revision.md` | spike-1 install probe dry-run JSONs at `spike/pre-m1-retrieval/dry-run-report*.json` |

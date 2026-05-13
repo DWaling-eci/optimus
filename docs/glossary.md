@@ -87,7 +87,7 @@ A **reranker** scores retrieval candidates against the query to produce a precis
 Optimus retrieval pipeline (locked):
 
 1. **First-stage dense retrieval** -- **Nomic CodeRankEmbed** (code-specific embeddings, `trust_remote_code=True` under the installer-gatekeeper trust model) embeds the query and all candidate chunks; cosine similarity + `torch.topk` filters to the top 100 dense candidates.
-2. **Late-interaction reranking** -- **ColBERTv2 via RAGatouille** scores the dense candidates with token-level late-interaction. Faster than a traditional cross-encoder while delivering near-SOTA precision inside the 8 GB container envelope (TR-04).
+2. **Late-interaction reranking** -- **ColBERTv2 via colbert-ai direct** (`colbert.modeling.checkpoint.Checkpoint` MaxSim; wrapper revised 2026-05-13 per `docs/decisions/colbert-wrapper-revision.md`) scores the dense candidates with token-level late-interaction. Faster than a traditional cross-encoder while delivering near-SOTA precision inside the 8 GB container envelope (TR-04).
 3. Return top-5 to the agent (context-clamped).
 
 **Historical note on dual-CE vs single-CE:** earlier drafts framed this as a pending M1.0 spike decision (v1 used dual cross-encoders -- one for code, one for prose). That framing is retired. The Nomic + ColBERTv2 stack supersedes the dual-CE question entirely; the late-interaction architecture is the v2 answer rather than picking between two traditional CEs. M1.0 Architecture Spike retains revision authority over the locked stack ONLY if a hard, evidence-backed roadblock surfaces during implementation.

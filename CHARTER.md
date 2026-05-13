@@ -76,7 +76,7 @@ v1's 18-module decomposition was sized for v1 scope (retrieval + memory + extrac
 - `optimus_resolve` retain/drop call, with evidence basis from spike-1.
 - spaCy retain/drop call (per Decision 5 spike-1 evidence).
 
-**Model stack and worker-pool / concurrency strategy are LOCKED** in `docs/decisions/secure-singleton-mcp-baseline.md`: Nomic CodeRankEmbed (dense retrieval) + ColBERTv2 via RAGatouille (reranker), bipartite concurrency with a singleton ML worker process. M1.0 has revision authority over the baseline ONLY if a hard, evidence-backed roadblock surfaces during implementation; absent a roadblock, the locked stack is built. The Architecture Spike does NOT re-pick the model stack or concurrency strategy from scratch.
+**Model stack and worker-pool / concurrency strategy are LOCKED** in `docs/decisions/secure-singleton-mcp-baseline.md`: Nomic CodeRankEmbed (dense retrieval) + ColBERTv2 via colbert-ai direct (reranker; wrapper revised 2026-05-13 per `docs/decisions/colbert-wrapper-revision.md`), bipartite concurrency with a singleton ML worker process. M1.0 has revision authority over the baseline ONLY if a hard, evidence-backed roadblock surfaces during implementation; absent a roadblock, the locked stack is built. The Architecture Spike does NOT re-pick the model stack or concurrency strategy from scratch.
 
 **No module lands in `src/` without an entry in this spike's output.** This is not "no new abstractions"; it's "abstractions justified by v2 scope, not inherited from v1."
 

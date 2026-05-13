@@ -21,7 +21,7 @@ You are the **next session** picking up spike-1 in optimus-trunk. You did NOT ru
 3. `C:/_Source/optimus/CHARTER.md` -- founding decisions; especially Decision 1 (host-singleton), Decision 3 (no memory), Decision 5 (salvage discipline), Decision 7 (host-singleton singleton-mode).
 4. `C:/_Source/optimus/docs/decomp/pre-M1-spikes.md` -- spike-1 framing source (H1+H2+H3; H4 RETIRED -- see step 5).
 5. `C:/_Source/optimus/docs/decisions/spacy-keep-drop.md` -- locked DROP verdict that retired H4. Your spike does NOT measure or build spaCy.
-6. `C:/_Source/optimus/docs/decisions/secure-singleton-mcp-baseline.md` -- the locked retrieval stack (Nomic CodeRankEmbed + ColBERTv2 via RAGatouille). Your thin Optimus uses this stack -- NOT a substitute.
+6. `C:/_Source/optimus/docs/decisions/secure-singleton-mcp-baseline.md` -- the locked retrieval stack (Nomic CodeRankEmbed + ColBERTv2 via colbert-ai direct). Your thin Optimus uses this stack -- NOT a substitute. **Read alongside** `C:/_Source/optimus/docs/decisions/colbert-wrapper-revision.md` -- the 2026-05-13 wrapper revision (RAGatouille -> colbert-ai direct; mechanism preserved, only invocation surface changed).
 7. `C:/_Source/optimus/docs/decisions/transport-and-discovery.md` -- locked transport contract (validated by spike-2). Your thin Optimus speaks MCP over stdio (single-client; spike-2 already validated multi-client transport).
 8. `C:/_Source/optimus/docs/decisions/success-metric.md` -- the >=1.0x outnumber floor + AND-combined two-component framing your H1 measurement compares against (one component this spike, full two-component eval at M6).
 9. `C:/_Source/optimus/docs/decisions/chat-report-sibling-charter.md` -- the toolkit your telemetry depends on; dual-IDE bar.
@@ -76,7 +76,7 @@ You are the **next session** picking up spike-1 in optimus-trunk. You did NOT ru
 
 **Trigger 2 (discovery-driven scope change):** any of the following triggers immediate escalation regardless of session count:
 
-- The locked Nomic + ColBERTv2 stack cannot be assembled within spike-1's resource envelope on the chosen test target (e.g., RAGatouille install proves blocked, Nomic load OOMs on the spike host, indexing the test target takes >24 hours).
+- The locked Nomic + ColBERTv2 stack cannot be assembled within spike-1's resource envelope on the chosen test target (e.g., colbert-ai install proves blocked, Nomic load OOMs on the spike host, indexing the test target takes >24 hours). **Note (2026-05-13):** the original wrapper-blocked failure mode -- "RAGatouille install proves blocked" -- already fired and triggered the wrapper revision per `docs/decisions/colbert-wrapper-revision.md`. The bar for additional discovery-driven scope changes remains the same.
 - The chat-report toolkit's structured-report shape (per `chat-report-sibling-charter.md`) is missing a field needed for H1/H2 measurement (broad-sweep classification, optimus tool-call attribution, informed-precision-read heuristic). The toolkit is a hard prerequisite; if its output is insufficient, spike-1 pauses.
 - The chosen test target is too large for the spike's timeline (e.g., even an indexing pre-pass runs longer than the per-task budget). Subset the target or pick a smaller one; document the change.
 - An H1/H2/H3 measurement returns a result that materially changes the scope of the next milestone (e.g., H3 fails -> `optimus_doctor` becomes mandatory CI integration with no opt-out; this would expand M2 scope materially and Dustin should know before you keep going).
@@ -166,14 +166,14 @@ The thin Optimus is **not** the v2 production server. It is the minimum viable r
 
 - Stdio MCP server (single-client; spike-2 already validated multi-client transport -- spike-1 is one Claude Code instance).
 - One MCP tool: `optimus_search(query: str) -> list[ranked_chunk]`. Returns top-5 ranked chunks per `secure-singleton-mcp-baseline.md` two-stage pipeline.
-- The locked retrieval stack: Nomic CodeRankEmbed (dense, with the `"Represent this query for searching relevant code"` task-instruction prefix) + ColBERTv2 via RAGatouille (rerank). No spaCy in the query path per `spacy-keep-drop.md`.
+- The locked retrieval stack: Nomic CodeRankEmbed (dense, with the `"Represent this query for searching relevant code"` task-instruction prefix) + ColBERTv2 via colbert-ai direct (rerank, via `colbert.modeling.checkpoint.Checkpoint` MaxSim per `docs/decisions/colbert-wrapper-revision.md`). No spaCy in the query path per `spacy-keep-drop.md`.
 - An on-disk chunk index built ONCE at indexing time (chunk all files, embed all chunks, persist embeddings). The MCP server reads the index at startup; queries do not re-embed documents.
 - Path-confinement: every agent-supplied path realpath-resolved against the test-target root before any FS operation. Per `secure-singleton-mcp-baseline.md` SECURITY callout.
 - Logging: at minimum, log every tool call's query + top-5 result paths to a per-session log file (for cross-checking against the chat-report toolkit's output).
 
 **MUST NOT include (out of scope; defer to M1+):**
 
-- Singleton container, Docker, network_mode none, model-cache bind-mount. (The spike runs the thin Optimus as a host-side Python process. Nomic/ColBERTv2 weights download to host once via `huggingface-cli` or `sentence-transformers`'s default cache; the spike is not testing the container model -- spike-2 did that.)
+- Singleton container, Docker, network_mode none, model-cache bind-mount. (The spike runs the thin Optimus as a Python process on WSL2 / Linux; on Windows hosts, that means a WSL2-side venv per the install probe finding 2026-05-13 -- colbert-ai's mandatory C++ extension uses `pthread.h` which is uncompilable on Windows native. On native Linux hosts, the same pattern applies without WSL2. Nomic/ColBERTv2 weights download to host once via the HF Hub default cache; the spike is not testing the container model -- spike-2 did that.)
 - `optimus_doctor`, `optimus_init`, `optimus_grep`, `optimus_list`, `optimus_delete`, `optimus_resolve`, telemetry plumbing beyond the chat-report-toolkit-driven measurement. None of these are under test in spike-1.
 - `.mcp.json` schema validation, `optimus_protocol_version` handshake, SO_PEERCRED / SID auth. Spike-2 validated those. Spike-1 runs single-client stdio in a trusted local context.
 - Multi-client concurrency, cap, busy_retry. Spike-2 validated these.
@@ -294,5 +294,10 @@ Per the validated M5 / M4 / spike-2 pattern, the final report goes through a fre
 ## 12. Status note
 
 Brief authored 2026-05-13 in optimus-trunk session that wrapped spike-2 + landed `docs/decisions/spacy-keep-drop.md`. Spike-1 is **prep-unblocked, empirically gated** -- prep work (this brief, target choice, dir-index authoring, thin-Optimus design) can start now; empirical task runs cannot start until B.3 (Claude Code chat-report variant) ships and the optimus submodule pin consumes it.
+
+**Next-session updates:**
+
+- 2026-05-13 (same-day, spike-1 prep session 1): `docs/decisions/colbert-wrapper-revision.md` landed -- ColBERTv2 wrapper changed from RAGatouille to colbert-ai direct (mechanism preserved). Sections 0 (read-list item 6), 2 (escalation trigger 2 example), and 5 (thin-Optimus scope locked-stack line) updated to reflect the revised wrapper. spaCy stays DROPPED but `docs/decisions/spacy-keep-drop.md` § 4 trigger list now names spike-1 H1 fail-mode-mapped-to-preprocessing-absence as an additional valid revival trigger. No empirical work has run yet; install probe is the next deliverable.
+- 2026-05-13 (same-session, install probe complete): probe PASS in WSL2 / Linux. The original "host-side Python process" framing in section 5 was generalized to "WSL2-side on Windows hosts; native Linux equivalent on Linux hosts" because colbert-ai's mandatory C++ extension (`segmented_maxsim_cpp`) uses `pthread.h` which is uncompilable on Windows native (the cl.exe attempt with VS Pro 2022 + vcvarsall sourced got to "fatal error C1083: Cannot open include file: 'pthread.h'"). WSL2 has pthread natively. Production env shape (Linux container) is also Linux, so the spike now matches production env shape better than host-side ever did. Five distinct roadblocks surfaced and were resolved in the probe arc; full chain documented in `spike/pre-m1-retrieval/README.md` "Install probe findings" section. Pin `transformers>=4.41.0,<5` (colbert-ai 0.2.22 vs transformers 5.x API breakage), `torch+cpu` via PyPI's pytorch CPU index (avoids 5-10 GB CUDA bloat that the spike does not need; production GPU/CPU choice remains M1.0's). M1.0 build adopts these pins as the production starting point.
 
 Revision history: this section is the only one the next session may modify (to add a "next session updates" line); all other sections are PM-locked and require Dustin's review to change.

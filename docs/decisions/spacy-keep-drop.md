@@ -55,6 +55,8 @@ This decision is revisable post-GA via standard decision-record revision (PR + s
 - "Soft preference shift" -- "what if we just added spaCy back to see" -- is **not** sufficient. The literature is strong enough that the burden of proof is on putting spaCy back, not on keeping it out.
 - The cheap conditional revision is "drop unless query length < N tokens" if very short queries underperform in practice. The literature gives no current reason to ship that conditional on day one.
 
+**Trigger update 2026-05-13** (per `docs/decisions/colbert-wrapper-revision.md`): the wrapper revision narrowed our empirical confidence in the locked stack's per-query-shape performance (we now use colbert-ai direct's `Checkpoint` MaxSim instead of RAGatouille's `.rerank()` -- mechanism-equivalent but not yet empirically verified on our targets). Spike-1 H1 is therefore added as a **legitimate revision trigger** for this record: if spike-1 H1 fails AND the failure mode maps cleanly to "retrieval mis-ranks queries dominated by code-identifier tokens," that is the empirical signal this record's "evidence-backed roadblock" bar requires. **No spaCy revival is pre-authorized.** This trigger update only names the additional valid path; the burden of proof to put spaCy back remains as written above.
+
 ## Research review -- evidence behind the verdict
 
 ### Q1: Has the field moved away from explicit query preprocessing for dense retrieval (general / non-code)?

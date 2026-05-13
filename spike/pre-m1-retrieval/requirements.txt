@@ -1,0 +1,31 @@
+# Spike-1 install-probe pins. See README "Install probe findings" for the full
+# story; short version:
+#   - RAGatouille 0.0.9+ pulls in langchain/llama-index/openai/Flask (~134 pkgs)
+#   - RAGatouille 0.0.8.x and 0.0.7.x exact-pin colbert-ai==0.2.19, which is
+#     YANKED from PyPI as of 2026-05-13. Clean wrapper versions are unreachable.
+#   - Therefore: drop RAGatouille, use colbert-ai directly. The decision record's
+#     pipeline (Nomic dense -> top-100 -> ColBERT rerank -> top-5) only needs
+#     ColBERT's MaxSim scoring, not RAGatouille's index/search machinery.
+#
+# Mini Shai-Hulud contamination check: dry-run with this set against the
+# attack-window contamination list (mistralai, guardrails-ai, lightning
+# 2.6.2/2.6.3) before installing.
+#
+# Linux note: torch's default Linux wheel pulls 19+ NVIDIA/CUDA packages
+# (cublas, cudnn, nccl, triton, cuda-toolkit, etc.) -- 5-10 GB of GPU runtime
+# libs not needed for spike-1's retrieval-behavior validation (spike-2 also
+# ran CPU-only). The PyPI index below resolves torch to CPU-only wheels and
+# elides the NVIDIA stack. Per brief §1 implementation-tactics authority;
+# the locked decision record does not mandate GPU. Production GPU/CPU choice
+# is M1.0 architecture spike's call, not spike-1's.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+sentence-transformers>=2.5.0
+colbert-ai>=0.2.20
+# transformers 5.x breaks colbert-ai 0.2.22's HF_ColBERT (missing
+# all_tied_weights_keys attribute introduced in transformers 5.x). Pin to
+# 4.x; sentence-transformers accepts >=4.41.0,<6.0.0 so this is safe.
+transformers>=4.41.0,<5
+einops>=0.7.0
+torch>=2.1.0
+psutil>=5.9.0
