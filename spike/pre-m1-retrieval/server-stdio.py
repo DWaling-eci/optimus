@@ -32,13 +32,21 @@ TEST_TARGET_ROOT_ENV = "OPTIMUS_SPIKE_TARGET_ROOT"
 
 
 def confine_path(user_path: str, target_root: Path) -> Path:
-    """Resolve user-supplied path; raise if it escapes the test-target root.
+    """Resolve user-supplied path; raise ValueError if it escapes target_root.
 
-    Mirrors the secure-singleton-mcp-baseline _confine_path contract: realpath
-    + prefix check, NOT a bare exists() check. Symlinks pointing outside the
-    root must raise.
+    realpath + prefix check, NOT a bare exists() check. Symlinks pointing
+    outside the root raise. Relative paths resolve against target_root.
     """
-    raise NotImplementedError("session 2: implement after install probe passes")
+    target_root = target_root.resolve()
+    candidate = Path(user_path)
+    if not candidate.is_absolute():
+        candidate = target_root / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(target_root)
+    except ValueError:
+        raise ValueError(f"path {user_path!r} resolves outside target_root {target_root}")
+    return resolved
 
 
 def load_index(index_dir: Path):
