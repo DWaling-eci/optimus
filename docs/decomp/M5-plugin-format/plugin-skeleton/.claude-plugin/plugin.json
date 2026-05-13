@@ -1,0 +1,16 @@
+{
+  "name": "chat-report-skeleton-example",
+  "description": "Minimal reference plugin demonstrating each Claude Code plugin component type. Reference deliverable from the chat-report sibling delegated session B.2 (plugin format research). NOT a production plugin -- M5 builds its own optimus bundle from optimus's src/{hooks,agents,skills,rules,commands}/ source.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Optimus chat-report delegated session",
+    "email": "dustin@walings.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "reference",
+    "skeleton",
+    "plugin-format",
+    "claude-code"
+  ]
+}

@@ -468,6 +468,7 @@ When you start, in order:
 |------|---------|--------|
 | 2026-05-12 | Initial author (PM via optimus session) | Brief authored. |
 | 2026-05-12 | Delegated session (Claude Opus 4.7) | Picked up. Pre-flight reads complete (AGENTS.md, CHARTER.md, sibling-charter, success-metric, telemetry-heuristic, M5 bundle + tasks, pre-M1-spikes, glossary, cursor variant code). Working notes at claudecode/WORKING-NOTES.md (local-gitignored). Direction sync (B.1-first vs Part A-first) opened. |
+| 2026-05-12 | Delegated session (Claude Opus 4.7) | B.1 closed POSITIVE; PR 1 (`docs(claudecode): chat-history store discovery findings`) merged to `dtwaling/ai-chat-report:master`. B.2 closed POSITIVE; deliverables live in optimus per PM ruling that output goes to the consumer repo (M5 lives in optimus): `docs/decomp/M5-plugin-format/M5-plugin-format-research.md` + `plugin-skeleton/`. Direct-trunk commit (no PR) per pre-init pattern. The brief's section 3.B.2 path references (`claudecode/PLUGIN-FORMAT-RESEARCH.md` etc.) are superseded by the optimus paths -- keeping the original brief wording so the correction trail is visible; readers should treat the optimus paths as canonical. |
 
 ---
 
