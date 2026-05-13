@@ -10,7 +10,8 @@ The MCP server reads this artifact at startup; queries do NOT re-embed documents
 Locked design per docs/spikes/spike-1-prep-brief.md section 5:
   - Built ONCE per test target. Re-runnable.
   - No spaCy. No identifier normalization. No query-side preprocessing.
-  - Index format = TBD (numpy .npz + JSON metadata most likely; finalize session 2).
+  - Index format: manifest.json + chunks.jsonl + embeddings.npy via
+    _index_format.py (no pickle).
 
 Out of scope (per brief): incremental updates, watch-mode, multi-target, sharding.
 """
@@ -31,6 +32,8 @@ in the spike report's methodology section.
 DEFAULT_INDEX_DIR = Path.home() / ".optimus-spike" / "index"
 
 MAX_FILE_BYTES = 1 * 1024 * 1024  # Cap per file to keep indexing bounded. 1 MB.
+
+NOMIC_MODEL_ID = "nomic-ai/CodeRankEmbed"
 
 
 def walk_target(target_root: Path):
@@ -67,26 +70,56 @@ def chunk_file(content: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
         yield start, content[start:start + chunk_size]
 
 
-def embed_chunks(chunks):
-    """Run Nomic CodeRankEmbed over a list of chunk texts.
+def embed_chunks(chunk_texts):
+    """Run Nomic CodeRankEmbed over chunk texts. No query prefix at index time.
 
-    No query-side prefix at index time. Document-side prefix per the CodeRankEmbed
-    model card (verify in session 1 install probe; record exact prefix in spike report).
+    The query-side prefix is only applied at search time per the CodeRankEmbed
+    model card. Document-side encoding is plain text.
     """
-    raise NotImplementedError("session 2: implement after install probe confirms prefixes")
+    from sentence_transformers import SentenceTransformer
+    import numpy as np
+
+    model = SentenceTransformer(NOMIC_MODEL_ID, trust_remote_code=True)
+    embeddings = model.encode(list(chunk_texts), show_progress_bar=False)
+    return np.asarray(embeddings, dtype=np.float32)
 
 
-def persist_index(out_dir: Path, metadata, embeddings, texts):
-    """Write index artifacts to out_dir.
-
-    Format TBD; lock in session 2. Must round-trip via load_index() in server-stdio.py.
-    """
-    raise NotImplementedError("session 2: implement after format decision")
+def persist_index(out_dir: Path, records, embeddings, target_root: Path) -> None:
+    """Wrapper around _index_format.persist_index with spike defaults."""
+    from _index_format import persist_index as _persist
+    _persist(
+        out_dir,
+        records=records,
+        embeddings=embeddings,
+        target_root=target_root,
+        chunk_size=DEFAULT_CHUNK_SIZE,
+        model_id=NOMIC_MODEL_ID,
+    )
 
 
 def main(target_root: Path, out_dir: Path = DEFAULT_INDEX_DIR) -> None:
     """Build index for target_root, write to out_dir."""
-    raise NotImplementedError("session 2: wire walk -> chunk -> embed -> persist pipeline")
+    from _index_format import ChunkRecord
+
+    records: list = []
+    chunk_id = 0
+    for file_path, content in walk_target(target_root):
+        for start, text in chunk_file(content):
+            records.append(ChunkRecord(
+                chunk_id=chunk_id,
+                file_path=file_path,
+                start_offset=start,
+                end_offset=start + len(text),
+                text=text,
+            ))
+            chunk_id += 1
+
+    if not records:
+        raise RuntimeError(f"no indexable files under {target_root}")
+
+    embeddings = embed_chunks([r.text for r in records])
+    persist_index(out_dir, records, embeddings, target_root)
+    print(f"Indexed {len(records)} chunks from {target_root} -> {out_dir}")
 
 
 if __name__ == "__main__":
