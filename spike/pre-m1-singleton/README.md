@@ -1,6 +1,6 @@
 # Spike-2 -- Singleton Container Feasibility
 
-**Status:** in-progress.
+**Status:** complete -- both transport legs verified; final report at `docs/spikes/spike-2-singleton-report.md`.
 **Spike framing source:** `docs/decomp/pre-M1-spikes.md` section "Spike-2: Singleton Container Feasibility".
 **Decision record under test:** `docs/decisions/transport-and-discovery.md` (pre-M0 provisional version per the hybrid pinning rule).
 
@@ -37,10 +37,12 @@ Each transport gets its own server stub and its own probe harness; the H1/H2/H3 
 spike/pre-m1-singleton/
   README.md                  -- this file
   server-wsl2.py             -- Linux/WSL2 MCP-stub server (Unix socket + SO_PEERCRED + mode 0600)
-  server-windows.py          -- Windows-native MCP-stub server (named pipe + ACL + SID compare)
-  probe-wsl2.py              -- 4-client concurrent probe for WSL2 transport
-  probe-windows.py           -- 4-client concurrent probe for Windows-native transport
-  probe-discovery.py         -- discovery + stale-endpoint cleanup probe (transport-agnostic)
+  server-windows.py          -- Windows-native MCP-stub server (named pipe + default ACL + SID compare; pure ctypes, no pywin32)
+  probe-wsl2.py              -- 4-client concurrent probe for WSL2 transport (h1, h2, cap, cross-user hypotheses)
+  probe-windows.py           -- 4-client concurrent probe for Windows-native transport (h1, h2, cap)
+  probe-discovery.py         -- discovery + stale-endpoint cleanup probe (transport-agnostic via --transport={wsl2,windows})
+  cross-user-probe.sh        -- WSL2 cross-user SO_PEERCRED rejection wrapper (docker-based actor, no host sudo needed)
+  run-wsl2-spike.sh          -- WSL2 leg orchestrator (compose up, run probes, tear down)
   grep_stub.py               -- shared canned optimus_grep impl over the parent-mount
   config-example.json        -- example ~/.optimus/config.json (parent-mount + concurrency cap)
   Dockerfile                 -- minimal Linux container for WSL2 transport
@@ -63,21 +65,61 @@ python probe-wsl2.py
 docker compose -f compose.yml down
 ```
 
-### Windows-native path (H1/H2 verdicts for named-pipe transport)
+### Windows-native path (H1/H2/cap verdicts for named-pipe transport)
 
 ```powershell
-# From spike/pre-m1-singleton/
-python server-windows.py &
-# Server listens on \\.\pipe\optimus with restricted ACL.
-python probe-windows.py
-# Expected: 4 clients connect concurrently; cross-user-SID rejection demonstrated; concurrent grep correctness verified.
+# Terminal A (server) -- defaults to mount C:\_Source\optimus, cap 4:
+$env:OPTIMUS_MOUNT_ROOT = "C:\_Source\optimus"
+cd C:\_Source\optimus\spike\pre-m1-singleton
+python server-windows.py
+# Server listens on \\.\pipe\optimus with default ACL (creator SID + LocalSystem).
+
+# Terminal B (probes):
+cd C:\_Source\optimus\spike\pre-m1-singleton
+python probe-windows.py --hypothesis h1 --clients 4
+python probe-windows.py --hypothesis h2 --clients 4 --pattern "def "
+
+# Cap probe needs server restart with cap=2:
+# (stop server in Terminal A, then:)
+$env:OPTIMUS_CONCURRENCY_CAP = "2"
+python server-windows.py
+# In Terminal B:
+python probe-windows.py --hypothesis cap --clients 4
+```
+
+Cross-user SID rejection on Windows is design-verified (server-windows.py's
+SID-compare path mirrors the WSL2 SO_PEERCRED path that IS empirically tested
+via cross-user-probe.sh) rather than executed. Per the 2026-05-12 scoping call,
+the realistic deployment is single-user dev host with multiple IDE processes,
+not multi-user Terminal Services. See the spike-2 report for full reasoning.
+
+### WSL2 cross-user SO_PEERCRED rejection (defense-2 empirical test)
+
+```bash
+# From WSL2, with the WSL2 server already running (docker compose up -d --build):
+cd /mnt/c/_Source/optimus/spike/pre-m1-singleton
+./cross-user-probe.sh
+# Or via the orchestrator: ./run-wsl2-spike.sh cross-user
+# Expected: docker-based ephemeral container (UID 65534) attempts connection;
+# server's SO_PEERCRED check fires; auth_rejected returned with peer_uid=65534
+# in the error payload. Wrapper temporarily relaxes socket mode to 0666 to
+# bypass defense 1 (file-permission); restored to original mode on exit.
 ```
 
 ### Discovery + stale-endpoint cleanup (transport-agnostic)
 
+```bash
+# WSL2:
+python3 probe-discovery.py --transport wsl2
+```
+
 ```powershell
-python probe-discovery.py
-# Expected: socket-aliveness probe per transport-and-discovery.md section 5 (500ms initial + 200ms retry); stale endpoint cleaned up before respawn.
+# Windows-native:
+python probe-discovery.py --transport windows
+# Expected: alive verdict if the server is running (single ping in <50ms);
+# no-endpoint verdict if no server. Stale on Windows is a degenerate case
+# because the named-pipe kernel object disappears with the last handle close
+# (no equivalent of a stale unix-socket file).
 ```
 
 ## What we record per run

@@ -95,6 +95,66 @@ def make_plan_cap_probe() -> list[dict]:
     return [{"method": "grep", "params": {"pattern": ".*", "max_matches": 5, "file_glob": "*.md", "hold_ms": 500}}]
 
 
+async def cross_user_session(client_id: int, socket_path: Path) -> dict:
+    """Cross-user rejection probe.
+
+    The server's SO_PEERCRED check (transport-and-discovery.md section 4) writes
+    an auth_rejected error PROACTIVELY upon detecting a UID mismatch, then
+    closes the connection -- BEFORE accepting any request frame. So the probe's
+    job is: open the connection, read one line (the rejection payload), assert
+    its shape, close.
+
+    Per spike-2 design: this probe must run as a UID different from the server's
+    UID. The cross-user-probe.sh wrapper handles that via `sudo -u nobody`.
+
+    NOTE on layered defense (defense-in-depth design from
+    transport-and-discovery.md sections 2 + 4):
+    - Defense 1: socket mode 0600 -- a different UID hits OS-level EACCES on
+      open() before SO_PEERCRED runs at all.
+    - Defense 2: SO_PEERCRED UID compare -- runs only if defense 1 is bypassed.
+    To exercise defense 2 empirically, the wrapper temporarily relaxes mode
+    to 0666 around the probe call. This is a TEST-ONLY escape hatch; production
+    posture is mode 0600 + SO_PEERCRED both active.
+    """
+    result = {
+        "client_id": client_id,
+        "connected": False,
+        "rejection_received": False,
+        "rejection_payload": None,
+        "errors": [],
+    }
+    try:
+        reader, writer = await asyncio.open_unix_connection(path=str(socket_path))
+        result["connected"] = True
+    except Exception as exc:
+        result["errors"].append({"step": "connect", "exception": f"{type(exc).__name__}: {exc}"})
+        return result
+
+    try:
+        line = await asyncio.wait_for(reader.readline(), timeout=5.0)
+        if line:
+            try:
+                resp = json.loads(line.decode("utf-8"))
+                result["rejection_payload"] = resp
+                err = resp.get("error", {}) if isinstance(resp, dict) else {}
+                if err.get("code") == "auth_rejected":
+                    result["rejection_received"] = True
+            except json.JSONDecodeError as exc:
+                result["errors"].append({"step": "parse-rejection", "exception": str(exc)})
+        else:
+            result["errors"].append({"step": "read-rejection", "reason": "empty-line-eof"})
+    except asyncio.TimeoutError:
+        result["errors"].append({"step": "read-rejection", "reason": "timeout-5s"})
+    except Exception as exc:
+        result["errors"].append({"step": "read-rejection", "exception": f"{type(exc).__name__}: {exc}"})
+    finally:
+        with suppress(Exception):
+            writer.close()
+            await writer.wait_closed()
+
+    return result
+
+
 async def run_probe(socket_path: Path, num_clients: int, hypothesis: str, pattern: str) -> dict:
     if hypothesis == "h1":
         plan = make_plan_h1()
@@ -102,14 +162,22 @@ async def run_probe(socket_path: Path, num_clients: int, hypothesis: str, patter
         plan = make_plan_h2(pattern)
     elif hypothesis == "cap":
         plan = make_plan_cap_probe()
+    elif hypothesis == "cross-user":
+        plan = []  # cross-user has no request plan; server writes rejection proactively
     else:
         raise ValueError(f"unknown hypothesis: {hypothesis}")
 
     t0 = time.monotonic()
-    results = await asyncio.gather(
-        *[client_session(i, socket_path, plan) for i in range(num_clients)],
-        return_exceptions=False,
-    )
+    if hypothesis == "cross-user":
+        results = await asyncio.gather(
+            *[cross_user_session(i, socket_path) for i in range(num_clients)],
+            return_exceptions=False,
+        )
+    else:
+        results = await asyncio.gather(
+            *[client_session(i, socket_path, plan) for i in range(num_clients)],
+            return_exceptions=False,
+        )
     elapsed_ms = int((time.monotonic() - t0) * 1000)
 
     summary = {
@@ -120,28 +188,37 @@ async def run_probe(socket_path: Path, num_clients: int, hypothesis: str, patter
         "elapsed_ms": elapsed_ms,
         "started_iso": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "clients": results,
+        "running_as_uid": os.geteuid() if hasattr(os, "geteuid") else None,
     }
 
-    # Verdict heuristics
-    all_connected = all(r["connected"] for r in results)
-    total_calls = sum(len(r["calls"]) for r in results)
-    expected_calls = num_clients * len(plan)
-    any_busy_retry = any(
-        any(c.get("response", {}).get("error", {}).get("code") == "busy_retry" for c in r["calls"])
-        for r in results
-    )
-    any_auth_rejected = any(
-        any(c.get("response", {}).get("error", {}).get("code") == "auth_rejected" for c in r["calls"])
-        for r in results
-    )
-    summary["verdict"] = {
-        "all_connected": all_connected,
-        "total_calls": total_calls,
-        "expected_calls": expected_calls,
-        "all_calls_completed": total_calls == expected_calls,
-        "any_busy_retry": any_busy_retry,
-        "any_auth_rejected": any_auth_rejected,
-    }
+    if hypothesis == "cross-user":
+        all_connected = all(r["connected"] for r in results)
+        all_rejected = all(r["rejection_received"] for r in results)
+        summary["verdict"] = {
+            "all_connected": all_connected,
+            "all_rejected": all_rejected,
+            "running_as_uid": summary["running_as_uid"],
+        }
+    else:
+        all_connected = all(r["connected"] for r in results)
+        total_calls = sum(len(r["calls"]) for r in results)
+        expected_calls = num_clients * len(plan)
+        any_busy_retry = any(
+            any(c.get("response", {}).get("error", {}).get("code") == "busy_retry" for c in r["calls"])
+            for r in results
+        )
+        any_auth_rejected = any(
+            any(c.get("response", {}).get("error", {}).get("code") == "auth_rejected" for c in r["calls"])
+            for r in results
+        )
+        summary["verdict"] = {
+            "all_connected": all_connected,
+            "total_calls": total_calls,
+            "expected_calls": expected_calls,
+            "all_calls_completed": total_calls == expected_calls,
+            "any_busy_retry": any_busy_retry,
+            "any_auth_rejected": any_auth_rejected,
+        }
     return summary
 
 
@@ -157,7 +234,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--socket", default=DEFAULT_SOCKET_PATH)
     parser.add_argument("--clients", type=int, default=4)
-    parser.add_argument("--hypothesis", choices=["h1", "h2", "cap"], default="h1")
+    parser.add_argument("--hypothesis", choices=["h1", "h2", "cap", "cross-user"], default="h1")
     parser.add_argument("--pattern", default="def ")
     parser.add_argument("--results-dir", default=str(Path(__file__).parent / "results"))
     args = parser.parse_args()
@@ -168,12 +245,21 @@ def main() -> None:
     out_path = write_results(summary, Path(args.results_dir))
     # Print a one-line verdict + the artifact path so the host runner can parse it.
     v = summary["verdict"]
-    print(
-        f"[probe-wsl2] hypothesis={args.hypothesis} all_connected={v['all_connected']} "
-        f"completed={v['all_calls_completed']} busy_retry={v['any_busy_retry']} "
-        f"auth_rejected={v['any_auth_rejected']} elapsed_ms={summary['elapsed_ms']} -> {out_path}"
-    )
-    sys.exit(0 if v["all_connected"] and v["all_calls_completed"] else 1)
+    if args.hypothesis == "cross-user":
+        print(
+            f"[probe-wsl2] hypothesis=cross-user all_connected={v['all_connected']} "
+            f"all_rejected={v['all_rejected']} running_as_uid={v['running_as_uid']} "
+            f"elapsed_ms={summary['elapsed_ms']} -> {out_path}"
+        )
+        # cross-user passes when connect succeeded AND server rejected.
+        sys.exit(0 if v["all_connected"] and v["all_rejected"] else 1)
+    else:
+        print(
+            f"[probe-wsl2] hypothesis={args.hypothesis} all_connected={v['all_connected']} "
+            f"completed={v['all_calls_completed']} busy_retry={v['any_busy_retry']} "
+            f"auth_rejected={v['any_auth_rejected']} elapsed_ms={summary['elapsed_ms']} -> {out_path}"
+        )
+        sys.exit(0 if v["all_connected"] and v["all_calls_completed"] else 1)
 
 
 if __name__ == "__main__":

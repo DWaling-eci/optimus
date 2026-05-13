@@ -8,7 +8,8 @@
 #   ./run-wsl2-spike.sh h2              # H2: concurrent grep correctness
 #   ./run-wsl2-spike.sh cap              # concurrency cap probe (low cap)
 #   ./run-wsl2-spike.sh discovery       # discovery + stale-cleanup probe
-#   ./run-wsl2-spike.sh all              # H1, H2, cap, discovery in sequence
+#   ./run-wsl2-spike.sh cross-user       # SO_PEERCRED cross-UID rejection (sudo -u nobody)
+#   ./run-wsl2-spike.sh all              # H1, H2, cap, discovery, cross-user in sequence
 #
 # Or from Windows PowerShell:
 #   wsl bash -c "cd /mnt/c/_Source/optimus/spike/pre-m1-singleton && ./run-wsl2-spike.sh all"
@@ -95,11 +96,18 @@ run_discovery() {
     python3 probe-discovery.py --transport wsl2 --socket "${SOCKET_PATH}" || echo "[run-wsl2-spike] probe-discovery exited non-zero"
 }
 
+run_cross_user() {
+    echo ""
+    echo "=== cross-user-probe.sh ==="
+    ./cross-user-probe.sh || echo "[run-wsl2-spike] cross-user-probe exited non-zero"
+}
+
 case "${HYPOTHESIS}" in
     h1) run_probe h1 ;;
     h2) run_probe h2 ;;
     cap) run_probe cap ;;
     discovery) run_discovery ;;
+    cross-user) run_cross_user ;;
     all)
         run_probe h1
         run_probe h2
@@ -115,6 +123,7 @@ case "${HYPOTHESIS}" in
         done
         run_probe cap
         run_discovery
+        run_cross_user
         ;;
     *)
         echo "Unknown hypothesis: ${HYPOTHESIS}" >&2
