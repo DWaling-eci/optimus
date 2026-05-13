@@ -58,20 +58,124 @@ This spike is **not** the v2 production server. Per brief §5:
 
 **Performance budget:** per-query latency <= 5 seconds end-to-end. Indexing-time can be higher. >5s = §2-trigger-2 escalation per brief.
 
-## How to run (current state -- session 1)
+## How to run -- working pipeline (session 2+)
 
-Skeletons (`server-stdio.py`, `indexer.py`) are shape-only -- no working pipeline yet. The install probe is the working deliverable; runs end-to-end via `run-probe.sh` from WSL2.
+End-to-end pipeline lands in session 2/3: indexer + stdio MCP server + tests. Test
+suite: 28 tests across `tests/test_chunk.py` (7), `tests/test_walk.py` (7),
+`tests/test_index_format.py` (5), `tests/test_confine.py` (5), plus model-loading
+smokes (`tests/test_smoke_index.py`, `tests/test_two_stage_search.py`). All green
+on WSL2 venv.
+
+### WSL2 setup (one-time)
 
 ```bash
-# WSL2 setup (one-time):
 sudo apt install -y python3.12-venv build-essential
 python3 -m venv ~/optimus-spike-venv
 source ~/optimus-spike-venv/bin/activate
 python -m pip install --only-binary :all: -r /mnt/c/_Source/optimus/spike/pre-m1-retrieval/requirements.txt
-
-# Run the probe (any time; idempotent):
-wsl.exe -- bash /mnt/c/_Source/optimus/spike/pre-m1-retrieval/run-probe.sh
 ```
+
+### Build the index
+
+```bash
+source ~/optimus-spike-venv/bin/activate
+cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
+python indexer.py <test-target-root> <out-dir>
+```
+
+The indexer walks `<test-target-root>`, chunks every file (char-window 1500),
+embeds with Nomic CodeRankEmbed (no query prefix at index time), and persists
+`manifest.json` + `chunks.jsonl` + `embeddings.npy` to `<out-dir>`. Re-runnable
+(idempotent; replace `<out-dir>` to invalidate).
+
+### Run the MCP server
+
+```bash
+OPTIMUS_SPIKE_INDEX_DIR=<out-dir-from-above> \
+OPTIMUS_SPIKE_TARGET_ROOT=<test-target-root> \
+python server-stdio.py
+```
+
+The server is stdio-only, single-client. It registers one tool: `optimus_search(query: str) -> list[dict]`. Each call logs to `<OPTIMUS_SPIKE_INDEX_DIR>/server.jsonl` for cross-check against the chat-report toolkit.
+
+### Run the test suite
+
+```bash
+source ~/optimus-spike-venv/bin/activate
+cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
+python -m pytest tests/ -v
+```
+
+### Empirical observations (session 2/3, 2026-05-13)
+
+Test target: `~/.spike-test-corpus-lite` (`ms-core` + `ms-core-api` copied from
+spike-2's `~/.spike-test-corpus/`). 8.4 MB, 819 files pre-filter, mostly Kotlin
+(583 .kt) plus SQL/Markdown/YAML/scripts.
+
+**Subset rationale (brief §1 implementation-tactics authority + §2 trigger-2):**
+The full spike-2 subset (`~/.spike-test-corpus/`, 324 MB) is dominated by
+`dockerLab/` (316 MB), which is overwhelmingly Docker-image blobs that the
+walker filters as binaries. A timing probe on `ms-core` alone (2.2 MB, 740
+chunks) ran for 7m16s (~1.7 chunks/sec on CPU); extrapolating to the full
+324 MB → ~5 hr indexing, well over the brief's 2 hr soft budget. Subsetted to
+the two Kotlin codebases (ms-core + ms-core-api). dockerLab indexing is
+out-of-scope for spike-1 measurement and skipped.
+
+**Indexing time:**
+
+| Corpus | Bytes | Chunks | Elapsed | Rate |
+|---|---|---|---|---|
+| ms-core (probe) | 2.2 MB | 740 | 7m16s | 1.7 chunks/sec |
+| ms-core + ms-core-api (full subset) | 8.4 MB | 3418 | ~38 min | ~1.5 chunks/sec |
+
+Within brief budget. ColBERT was warm-cached from session 1's install probe;
+JIT compile of `segmented_maxsim_cpp` did not repeat.
+
+**Query latency (3-query smoke against the 3418-chunk index):**
+
+| Query | Elapsed | Top result | Score |
+|---|---|---|---|
+| "how does the build system run tests" | 14.5 s | `ms-core-api/README.md` | 19.03 |
+| "http retry logic" | 12.0 s | `ms-core/.../MicrometerTestExtensions.kt` | 15.21 |
+| "kotlin coroutine cancellation" | 11.3 s | `ms-core/.../IntegrationTestFramework.kt` | 14.48 |
+
+**LATENCY FINDING (brief §5 budget = 5s/query; §2 trigger-2 case):** Per-query
+latency is **2-3x over budget**. Retrieval correctness is directionally
+sensible (build query → README; retry/HTTP query → metrics test; coroutine
+query → test framework) but the latency bar is missed by a wide margin.
+
+Bottleneck root cause: **ColBERTv2 rerank of the top-100 dense candidates on
+CPU.** The MaxSim docFromText pass batches 100 candidate chunks at bsize=8
+(~12-13 forward passes), each ~1s on the spike's CPU env. Nomic dense
+encoding of the query alone is ~1s; numpy cosine over 3418 chunks is
+sub-millisecond. So the bulk of the 11-14s is the rerank stage.
+
+**Tactical levers available** (defer the decision to the spike report's
+verdict section; do NOT silently change the protocol):
+1. Reduce `dense_k` from 100 → 30. Expected: ~3-4s rerank → ~5s total.
+   Quality tradeoff: smaller candidate pool may miss good answers the dense
+   stage ranked 30-100.
+2. Skip the ColBERT rerank entirely; return Nomic-only top-5. Expected: ~1-2s
+   total. Quality tradeoff: loses ColBERT's late-interaction reranking.
+3. Switch to GPU. Out-of-scope for spike-1's CPU host; M1.0 architecture
+   spike decides production GPU/CPU.
+4. Accept the 11-14s and measure agent behavior as-is. Claude Code's MCP
+   tool timeout is generous (60s+); the agent should not actually time out.
+   The latency may still influence behavior (hesitation, fewer optimus_*
+   calls).
+
+**Recommendation pending PM call:** option 4 + report the finding. The
+spike's measurement integrity comes from running the same retrieval surface
+across all conditions; tuning mid-spike contaminates the comparison.
+
+### MCP-client smoke artifacts
+
+- `results/smoke-msrepo.py` (gitignored) -- the smoke client used to capture
+  the latencies above. Authored via Write tool (heredoc-via-cmd.exe nested
+  escapes mangle f-strings; use Write-authored standalone scripts).
+- `results/smoke-msrepo.txt` (gitignored) -- raw smoke output.
+- `results/index-msrepo-timing.txt` (gitignored) -- indexing summary.
+- `results/install-probe.json` (gitignored, session 1) -- install probe output.
 
 **Why WSL2 and not Windows host:** colbert-ai's `Checkpoint.__init__` JIT-compiles a C++ extension (`segmented_maxsim_cpp`) at load time. The extension's source uses `pthread.h` (POSIX-only) and is uncompilable on Windows without a POSIX shim. WSL2 has pthread natively, gcc + build-essential pre-installable via apt, and matches the production-container env shape (production runs in a Linux container regardless of host OS). See "Install probe findings" below for the full Windows attempt chain that led to this.
 
