@@ -13,7 +13,12 @@ optimus_grep, optimus_list, optimus_delete, telemetry plumbing, spaCy.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import os
+import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -59,19 +64,36 @@ _INDEX_CACHE: dict = {"index_dir": None, "manifest": None, "records": None, "emb
 _MODELS_CACHE: dict = {"nomic": None, "colbert": None}
 
 
+@contextlib.contextmanager
+def _stdout_to_stderr():
+    """Redirect stdout to stderr while ML libs noisily print to it.
+
+    MCP stdio transport REQUIRES stdout to carry only JSON-RPC frames; ColBERT
+    prints '[<date>] Loading checkpoint...' to stdout, which corrupts the stream.
+    """
+    old = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        yield
+    finally:
+        sys.stdout = old
+
+
 def _ensure_models():
     """Lazy-load Nomic + ColBERT, cache. Idempotent across calls."""
     if _MODELS_CACHE["nomic"] is None:
-        from sentence_transformers import SentenceTransformer
-        _MODELS_CACHE["nomic"] = SentenceTransformer(
-            "nomic-ai/CodeRankEmbed", trust_remote_code=True
-        )
+        with _stdout_to_stderr():
+            from sentence_transformers import SentenceTransformer
+            _MODELS_CACHE["nomic"] = SentenceTransformer(
+                "nomic-ai/CodeRankEmbed", trust_remote_code=True
+            )
     if _MODELS_CACHE["colbert"] is None:
-        from colbert.modeling.checkpoint import Checkpoint
-        from colbert.infra import ColBERTConfig
-        _MODELS_CACHE["colbert"] = Checkpoint(
-            "colbert-ir/colbertv2.0", colbert_config=ColBERTConfig()
-        )
+        with _stdout_to_stderr():
+            from colbert.modeling.checkpoint import Checkpoint
+            from colbert.infra import ColBERTConfig
+            _MODELS_CACHE["colbert"] = Checkpoint(
+                "colbert-ir/colbertv2.0", colbert_config=ColBERTConfig()
+            )
     return _MODELS_CACHE["nomic"], _MODELS_CACHE["colbert"]
 
 
@@ -138,7 +160,53 @@ def two_stage_search(query: str, index_dir: Path, top_k: int = 5):
 
 def main() -> None:
     """Stdio MCP server entrypoint. Spike-1 single-client, no transport auth."""
-    raise NotImplementedError("Task 7: wire FastMCP stdio server + register optimus_search tool")
+    from mcp.server.fastmcp import FastMCP
+
+    index_dir = Path(os.environ.get(INDEX_DIR_ENV, Path.home() / ".optimus-spike" / "index"))
+    target_root_env = os.environ.get(TEST_TARGET_ROOT_ENV)
+    if target_root_env:
+        target_root = Path(target_root_env).resolve()
+    else:
+        # Fallback: read target_root from the index manifest
+        manifest, _, _ = load_index(index_dir)
+        target_root = Path(manifest["target_root"]).resolve()
+
+    log_path = index_dir / "server.jsonl"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Warm caches at startup so the first tool call isn't a multi-second cold load
+    _ensure_models()
+    _ensure_index(index_dir)
+
+    app = FastMCP("optimus-spike-1")
+
+    @app.tool()
+    def optimus_search(query: str) -> list[dict]:
+        """Retrieve top-5 code chunks matching the query from the indexed test target."""
+        t0 = time.perf_counter()
+        results = two_stage_search(query, index_dir, top_k=5)
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+
+        # Path-confine result paths (defensive; indexer should already guarantee this)
+        confined = []
+        for r in results:
+            try:
+                confined_path = confine_path(r["file_path"], target_root)
+                confined.append({**r, "file_path": str(confined_path)})
+            except ValueError:
+                continue  # Drop any chunk whose path escapes target_root
+
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({
+                "ts_iso": datetime.now(timezone.utc).isoformat(),
+                "query": query,
+                "elapsed_ms": elapsed_ms,
+                "results": [{"path": r["file_path"], "score": r["score"]} for r in confined],
+            }) + "\n")
+
+        return confined
+
+    app.run()
 
 
 if __name__ == "__main__":
