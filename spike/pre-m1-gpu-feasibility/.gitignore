@@ -1,0 +1,9 @@
+results/
+*.log
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+install-probe.json
+# Dry-run report JSONs are large (1-2 MB each), regenerable from requirements.txt
+dry-run-report*.json
