@@ -374,10 +374,10 @@ If smoke tests fail with OOM or device-mismatch, escalate per brief section 2 tr
 
 - [ ] **Step 1: Confirm an indexed test corpus exists for ms-core + ms-core-api**
 
-The existing spike-1 work indexed `~/.spike-test-corpus-lite/` (ms-core + ms-core-api) at chunk_size=600. Verify it's present:
+The existing spike-1 work indexed `~/.spike-test-corpus-lite/` (ms-core + ms-core-api) at chunk_size=600. The index lives at `~/.optimus-spike/index-msrepo-r600/` (the `-r600` suffix marks chunk_size=600 from session 3 post-truncation-fix; the original chunk_size=1500 index at `~/.optimus-spike/index-msrepo/` is preserved for reference but is NOT what the GPU probe baseline used). Verify the r600 variant is present:
 
 ```bash
-wsl.exe -- bash -c 'ls -la ~/.optimus-spike/index/ 2>&1 | head'
+wsl.exe -- bash -c 'ls -la ~/.optimus-spike/index-msrepo-r600/ 2>&1 | head'
 ```
 
 Expected: `manifest.json`, `chunks.jsonl`, `embeddings.npy` present. If missing, rebuild per spike-1 README "Build the index" section before continuing.
@@ -392,32 +392,40 @@ Create a tiny smoke runner if one doesn't exist. The probe used these queries:
 | "http retry logic" | 10.65s | 0.47s |
 | "kotlin coroutine cancellation" | 11.26s | 0.46s |
 
-Run via direct pytest if a smoke script lacks, or via a stdio-MCP test client. The simplest path is to invoke `two_stage_search` directly:
+Run via direct pytest if a smoke script lacks, or via a stdio-MCP test client. The simplest path is to invoke `two_stage_search` directly. **The spike-1 server file is `server-stdio.py` (hyphen) — Python cannot `import server_stdio` from a hyphenated filename, so use the same `importlib.util.spec_from_file_location` pattern the existing test suite uses (see `tests/test_two_stage_search.py`):**
 
 ```bash
 wsl.exe -- bash -c 'source ~/optimus-spike-gpu-venv/bin/activate && \
   cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval && \
-  python -c "
-import os, time
-os.environ[\"OPTIMUS_SPIKE_INDEX_DIR\"] = str(os.path.expanduser(\"~/.optimus-spike/index\"))
-os.environ[\"OPTIMUS_SPIKE_TARGET_ROOT\"] = os.path.expanduser(\"~/.spike-test-corpus-lite\")
-import server_stdio
+  python << "PYEOF"
+import importlib.util, os, time
 from pathlib import Path
-index_dir = Path(os.environ[\"OPTIMUS_SPIKE_INDEX_DIR\"])
-server_stdio._ensure_models()
-server_stdio._ensure_index(index_dir)
+
+INDEX = Path.home() / ".optimus-spike" / "index-msrepo-r600"
+TARGET = Path.home() / ".spike-test-corpus-lite"
+os.environ["OPTIMUS_SPIKE_INDEX_DIR"] = str(INDEX)
+os.environ["OPTIMUS_SPIKE_TARGET_ROOT"] = str(TARGET)
+
+spec = importlib.util.spec_from_file_location("server_stdio", "server-stdio.py")
+ss = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(ss)
+
+print(f"device={ss.select_device()}")
+ss._ensure_models()
+ss._ensure_index(INDEX)
+
 queries = [
-    \"how does the build system run tests\",
-    \"http retry logic\",
-    \"kotlin coroutine cancellation\",
+    "how does the build system run tests",
+    "http retry logic",
+    "kotlin coroutine cancellation",
 ]
 for q in queries:
     t0 = time.perf_counter()
-    results = server_stdio.two_stage_search(q, index_dir, top_k=5)
+    results = ss.two_stage_search(q, INDEX, top_k=5)
     elapsed = time.perf_counter() - t0
-    top1 = results[0][\"file_path\"] if results else None
-    print(f\"{elapsed:.2f}s top1={top1} query={q!r}\")
-"'
+    top1 = results[0]["file_path"] if results else None
+    print(f"  {elapsed:.2f}s  top1={top1}")
+PYEOF'
 ```
 
 Expected:
