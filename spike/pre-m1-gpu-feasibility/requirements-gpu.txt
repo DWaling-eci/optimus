@@ -1,0 +1,36 @@
+# Spike pre-m1-gpu-feasibility requirements (cu121 torch wheel)
+#
+# Mirrors spike/pre-m1-retrieval/requirements.txt EXCEPT torch is pinned to a
+# cu121-tagged build. Lives in a parallel venv (~/optimus-spike-venv-gpu/),
+# zero risk to the spike-1 CPU env. See README.md for the full rationale.
+#
+# CUDA wheel choice: cu121 (forward-compatible with the host's 12.8 runtime per
+# CUDA's enhanced compatibility for major version 12.x). Driver 573.44 (host) /
+# 570.170 (WSL2) -- both well above the 525+ minimum cu121 wheels need.
+#
+# Why the explicit `+cu121` local version specifier:
+#   First dry-run resolved `torch==2.12.0` from PyPI (now bundling cu13 libs).
+#   `--extra-index-url` is a FALLBACK, so PyPI wins on higher versions. The
+#   `+cu121` local tag is only published on the pytorch cu121 index, forcing
+#   pip to fetch from there. Locking 2.5.1 (the latest cu121 build available
+#   for py3.12 as of 2026-05-13 -- torch 2.6.0+ shipped only as cu124/cu126/cu128).
+#
+# Mini Shai-Hulud contamination check: dry-run with this set against the
+# attack-window contamination list (mistralai, guardrails-ai, lightning
+# 2.6.2/2.6.3) BEFORE the real install. See [[shai-hulud-pip-install-discipline]].
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+sentence-transformers>=2.5.0
+colbert-ai>=0.2.20
+# transformers 5.x breaks colbert-ai 0.2.22's HF_ColBERT (missing
+# all_tied_weights_keys attribute introduced in transformers 5.x). Pin to
+# 4.x; sentence-transformers accepts >=4.41.0,<6.0.0 so this is safe.
+transformers>=4.41.0,<5
+einops>=0.7.0
+# Explicit +cu121 local tag forces resolution from the pytorch cu121 index.
+torch==2.5.1+cu121
+# Cap numpy to <3 (torch 2.5.x is built against numpy 2.x; numpy 3 not supported)
+numpy>=1.26.0,<3
+psutil>=5.9.0
+pytest>=8.0.0
+mcp>=1.0.0
