@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "bash \"./hooks/example-hook.sh\" session-start",
+        "type": "command",
+        "timeout": 5,
+        "failClosed": false
+      }
+    ]
+  }
+}

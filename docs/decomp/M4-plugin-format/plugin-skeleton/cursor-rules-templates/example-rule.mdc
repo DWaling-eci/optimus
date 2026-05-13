@@ -1,0 +1,30 @@
+---
+description: Reference rule template demonstrating the Cursor .mdc rule format. Triggers on Markdown file edits within the demo project.
+globs: **/*.md
+alwaysApply: false
+---
+
+# Example Rule (reference)
+
+This rule is a REFERENCE for the Cursor rule format. It demonstrates:
+
+- `.mdc` file extension (NOT `.md`) -- distinguishes rule files from arbitrary Markdown.
+- YAML frontmatter with three fields:
+  - `description` (string): shown in Cursor's rule picker UI.
+  - `globs` (string): file pattern; the rule applies when matching files are open.
+  - `alwaysApply` (boolean): if `true`, applies to every session regardless of file context.
+- Body content: persistent guidance for the AI agent, kept under 50 lines per the `create-rule` spec.
+
+## Installer pattern
+
+Rules ship in the plugin at `cursor-rules-templates/<name>.mdc` but are NOT auto-loaded from there. The optimus host-side installer (M4 `optimus init <project>` step) copies templates into `<project-root>/.cursor/rules/<name>.mdc`. This is the only Cursor-native location for rules; Cursor does NOT have a user-level rules directory.
+
+## What this rule does (in production)
+
+Nothing -- it is a reference. Production rules carry actionable, project-specific guidance such as:
+
+- Always use TypeScript strict mode for `**/*.ts`.
+- Prefer functional component patterns for `frontend/**/*.tsx`.
+- Reference the local API client for any new backend endpoint.
+
+Source: `~/.cursor/skills-cursor/create-rule/SKILL.md` (Cursor-authored canonical spec).

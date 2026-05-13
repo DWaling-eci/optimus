@@ -1,0 +1,21 @@
+{
+  "name": "cursor-plugin-skeleton-example",
+  "displayName": "Cursor Plugin Skeleton (reference)",
+  "description": "Minimal reference plugin demonstrating each Cursor plugin component type. Reference deliverable from the M4 plugin format research. NOT a production plugin -- M4 builds its own optimus bundle from optimus's src/{hooks,agents,skills,rules,commands}/ source.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Optimus M4 plugin-format research",
+    "email": "dustin@walings.com"
+  },
+  "license": "MIT",
+  "keywords": [
+    "reference",
+    "skeleton",
+    "plugin-format",
+    "cursor"
+  ],
+  "skills": "./skills/",
+  "agents": "./agents/",
+  "commands": "./commands/",
+  "hooks": "./hooks/hooks-cursor.json"
+}
