@@ -281,7 +281,7 @@ Surfaces: build-time validation telemetry (EUR-10), CI-enforced standards (TR-15
 
 ## Pre-Kickoff Prerequisite
 
-Before M0 begins, the **chat-report sibling project** must exist. It provides the telemetry instrumentation that spike-1 and Phase 1.5 depend on. Charter, DoD, and fallback (Cursor-only if Claude Code variant slips) in `docs/decisions/chat-report-sibling-charter.md`.
+Before M0 begins, the **chat-report sibling project** must exist. It provides the telemetry instrumentation that spike-1 and Phase 1.5 depend on. Charter, DoD, and the dual-IDE-mandatory / project-pause-only escalation policy live in `docs/decisions/chat-report-sibling-charter.md`.
 
 This is currently the largest external dependency in v2 planning. Without it, the success-metric instrument doesn't exist and the v2 thesis cannot be validated.
 

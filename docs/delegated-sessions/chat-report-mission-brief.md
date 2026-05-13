@@ -467,6 +467,7 @@ When you start, in order:
 | Date | Reviser | Change |
 |------|---------|--------|
 | 2026-05-12 | Initial author (PM via optimus session) | Brief authored. |
+| 2026-05-12 | Delegated session (Claude Opus 4.7) | Picked up. Pre-flight reads complete (AGENTS.md, CHARTER.md, sibling-charter, success-metric, telemetry-heuristic, M5 bundle + tasks, pre-M1-spikes, glossary, cursor variant code). Working notes at claudecode/WORKING-NOTES.md (local-gitignored). Direction sync (B.1-first vs Part A-first) opened. |
 
 ---
 

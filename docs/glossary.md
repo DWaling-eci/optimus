@@ -215,7 +215,7 @@ Key facts for implementation:
 - **Phase 6.1.1 (M6):** informed-precision-read heuristic on top of both variants -- see `docs/telemetry-heuristic.md` for failure modes the implementation must handle.
 - **Phase 6.1.2 (M6):** aggregate + weekly summary rolling up across IDEs.
 
-**Spike-1 implication:** chat-report capability is the prerequisite for spike-1 telemetry. If the Claude Code variant slips, spike-1 falls back to Cursor-only (per the sibling charter).
+**Spike-1 implication:** chat-report capability is the prerequisite for spike-1 telemetry. Dual-IDE coverage is mandatory; if the Claude Code variant slips, the project pauses pending re-scope per the locked sibling charter (no Cursor-only fallback).
 
 ---
 
