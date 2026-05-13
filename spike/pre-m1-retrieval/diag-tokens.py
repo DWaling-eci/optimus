@@ -1,11 +1,14 @@
 """Diagnostic: token math + ColBERT truncation analysis + host resources.
 
 Run from WSL2 venv:
-    python results/diag-tokens.py
+    python diag-tokens.py                       # default: ~/.optimus-spike/index-msrepo
+    python diag-tokens.py <index_dir>           # custom index dir
+    OPTIMUS_DIAG_INDEX_DIR=<path> python diag-tokens.py
 """
 
 import json
 import os
+import sys
 from pathlib import Path
 
 from colbert.infra import ColBERTConfig
@@ -16,13 +19,20 @@ cfg = ColBERTConfig()
 print("ColBERTv2 defaults:")
 print(f"  doc_maxlen   = {cfg.doc_maxlen} tokens")
 print(f"  query_maxlen = {cfg.query_maxlen} tokens")
-print(f"  bsize        = {cfg.bsize}  (ColBERTConfig default; our query-time docFromText uses 8)")
+print(f"  bsize        = {cfg.bsize}  (ColBERTConfig default)")
 print(f"  dim          = {cfg.dim}")
 print()
 
 tok = AutoTokenizer.from_pretrained("colbert-ir/colbertv2.0")
 
-idx_dir = Path.home() / ".optimus-spike" / "index-msrepo"
+if len(sys.argv) > 1:
+    idx_dir = Path(sys.argv[1]).expanduser().resolve()
+elif os.environ.get("OPTIMUS_DIAG_INDEX_DIR"):
+    idx_dir = Path(os.environ["OPTIMUS_DIAG_INDEX_DIR"]).expanduser().resolve()
+else:
+    idx_dir = Path.home() / ".optimus-spike" / "index-msrepo"
+print(f"Index under analysis: {idx_dir}")
+print()
 chunks_jsonl = idx_dir / "chunks.jsonl"
 
 print("Sampled chunks (ColBERTv2 tokenizer):")

@@ -31,6 +31,13 @@ INDEX_DIR_ENV = "OPTIMUS_SPIKE_INDEX_DIR"
 TEST_TARGET_ROOT_ENV = "OPTIMUS_SPIKE_TARGET_ROOT"
 """Test target root for path confinement. Default: c:/ms-superrepo/"""
 
+DEFAULT_RERANK_BSIZE = 32
+"""ColBERTv2 batch size at rerank-time docFromText, revised 2026-05-13 from
+hardcoded 8. Matches ColBERTConfig().bsize default; ~4x fewer forward passes
+per query on the top-100 candidate batch. Pinned via test_rerank_bsize.py
+(asserts equality with ColBERTConfig().bsize so the value tracks upstream).
+"""
+
 
 def confine_path(user_path: str, target_root: Path) -> Path:
     """Resolve user-supplied path; raise ValueError if it escapes target_root.
@@ -122,7 +129,16 @@ def two_stage_search(query: str, index_dir: Path, top_k: int = 5):
     nomic, colbert = _ensure_models()
     records, embeddings = _ensure_index(index_dir)
 
-    query_emb = nomic.encode([CHAT_QUERY_PREFIX + ": " + query])[0].astype(np.float32)
+    # Wrap ALL ML-lib invocations in _stdout_to_stderr. Both libs noisily print
+    # to stdout per call (Nomic: sentence-transformers progress bars; ColBERT:
+    # QueryTokenizer/Checkpoint debug dumps of Input/Output IDs and masks).
+    # These corrupted MCP's JSON-RPC framing and added measurable wall-clock
+    # latency. Load-time wrapping (from `_ensure_models`) was insufficient
+    # because both libs print on every query too.
+    with _stdout_to_stderr():
+        query_emb = nomic.encode(
+            [CHAT_QUERY_PREFIX + ": " + query], show_progress_bar=False
+        )[0].astype(np.float32)
 
     # Dense: cosine similarity. Normalize both sides.
     q_norm = query_emb / (np.linalg.norm(query_emb) + 1e-9)
@@ -135,8 +151,11 @@ def two_stage_search(query: str, index_dir: Path, top_k: int = 5):
     candidate_texts = [r.text for r in candidate_records]
 
     # ColBERT MaxSim rerank
-    q_colbert = colbert.queryFromText([query])  # [1, Nq, dim]
-    docs_result = colbert.docFromText(candidate_texts, bsize=8, keep_dims=False)
+    with _stdout_to_stderr():
+        q_colbert = colbert.queryFromText([query])  # [1, Nq, dim]
+        docs_result = colbert.docFromText(
+            candidate_texts, bsize=DEFAULT_RERANK_BSIZE, keep_dims=False
+        )
     d_emb_list = docs_result[0] if isinstance(docs_result, tuple) else docs_result
 
     reranked = []

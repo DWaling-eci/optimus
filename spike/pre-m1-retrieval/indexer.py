@@ -21,12 +21,26 @@ from __future__ import annotations
 from pathlib import Path
 
 
-DEFAULT_CHUNK_SIZE = 1500
-"""Char-window chunk size per baseline-decision-record illustrative server.py.
+DEFAULT_CHUNK_SIZE = 600
+"""Char-window chunk size, revised 2026-05-13 from the baseline-record's 1500.
 
-Implementation may revise to AST-aware or garp-driven candidates per brief §1
-"implementation tactics" unilateral-decision authority. Document any divergence
-in the spike report's methodology section.
+Why 600 (not 700 as initially planned): ColBERTv2's `doc_maxlen = 220`
+tokens. Kotlin code in the live test corpus tokenizes at ~3.5 chars/token
+on average, but TDD with an adversarial-dense Kotlin fixture (no
+whitespace gaps, no comments) measured 3.125 chars/token worst case. At
+700 chars, the dense worst case hits 224 tokens -- 4 over doc_maxlen.
+At 600 chars, the dense worst case is ~192 tokens, with 20-token safety
+margin under doc_maxlen for tokenizer special tokens + future corpus
+shifts.
+
+At the original 1500, 87% of chunks exceeded doc_maxlen and 46% of all
+indexed tokens were silently truncated at rerank time (`diag-tokens.py`
+reproducer, 2026-05-13).
+
+Per brief §1 implementation-tactics authority. Cross-condition
+comparability preserved because the revised protocol applies uniformly
+across all spike conditions. Invariant under test:
+`tests/test_chunk_colbert_invariant.py`.
 """
 
 DEFAULT_INDEX_DIR = Path.home() / ".optimus-spike" / "index"

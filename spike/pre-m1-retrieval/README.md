@@ -83,10 +83,11 @@ cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
 python indexer.py <test-target-root> <out-dir>
 ```
 
-The indexer walks `<test-target-root>`, chunks every file (char-window 1500),
-embeds with Nomic CodeRankEmbed (no query prefix at index time), and persists
-`manifest.json` + `chunks.jsonl` + `embeddings.npy` to `<out-dir>`. Re-runnable
-(idempotent; replace `<out-dir>` to invalidate).
+The indexer walks `<test-target-root>`, chunks every file (char-window
+`indexer.DEFAULT_CHUNK_SIZE`; revised to 600 in session 3 -- see Empirical
+observations below), embeds with Nomic CodeRankEmbed (no query prefix at
+index time), and persists `manifest.json` + `chunks.jsonl` + `embeddings.npy`
+to `<out-dir>`. Re-runnable (idempotent; replace `<out-dir>` to invalidate).
 
 ### Run the MCP server
 
@@ -106,7 +107,7 @@ cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
 python -m pytest tests/ -v
 ```
 
-### Empirical observations (session 2/3, 2026-05-13)
+### Empirical observations (sessions 2/3, 2026-05-13)
 
 Test target: `~/.spike-test-corpus-lite` (`ms-core` + `ms-core-api` copied from
 spike-2's `~/.spike-test-corpus/`). 8.4 MB, 819 files pre-filter, mostly Kotlin
@@ -121,105 +122,173 @@ chunks) ran for 7m16s (~1.7 chunks/sec on CPU); extrapolating to the full
 the two Kotlin codebases (ms-core + ms-core-api). dockerLab indexing is
 out-of-scope for spike-1 measurement and skipped.
 
-**Indexing time:**
+#### Indexing time
 
-| Corpus | Bytes | Chunks | Elapsed | Rate |
-|---|---|---|---|---|
-| ms-core (probe) | 2.2 MB | 740 | 7m16s | 1.7 chunks/sec |
-| ms-core + ms-core-api (full subset) | 8.4 MB | 3418 | ~38 min | ~1.5 chunks/sec |
+| Corpus | Bytes | chunk_size | Chunks | Elapsed | Rate |
+|---|---|---|---|---|---|
+| ms-core (probe) | 2.2 MB | 1500 | 740 | 7m16s | 1.7 chunks/sec |
+| ms-core + ms-core-api (session 2) | 8.4 MB | 1500 | 3418 | ~38 min | ~1.5 chunks/sec |
+| ms-core + ms-core-api (session 3, post-revision) | 8.4 MB | 600 | 7915 | ~33 min | ~4.0 chunks/sec |
 
-Within brief budget. ColBERT was warm-cached from session 1's install probe;
-JIT compile of `segmented_maxsim_cpp` did not repeat.
+Re-indexing at the revised chunk_size took LESS wall-clock than the session-2
+indexing despite producing 2.3x more chunks. Nomic was warm-cached on the
+re-index; per-chunk forward-pass cost is bounded by chunk content (not
+chunk_size constant) so the 2.3x chunk count is offset by ~60% smaller per-chunk
+forward time + better SentenceTransformer batching at the smaller size.
 
-**Query latency (3-query smoke against the 3418-chunk index):**
+#### Query latency (3-query smoke)
 
-| Query | Elapsed | Top result | Score |
+| Query | Session 2 (1500/8) | Session 3 (600/32) | Δ |
 |---|---|---|---|
-| "how does the build system run tests" | 14.5 s | `ms-core-api/README.md` | 19.03 |
-| "http retry logic" | 12.0 s | `ms-core/.../MicrometerTestExtensions.kt` | 15.21 |
-| "kotlin coroutine cancellation" | 11.3 s | `ms-core/.../IntegrationTestFramework.kt` | 14.48 |
+| "how does the build system run tests" | 14.5 s | 12.4 s | -14% |
+| "http retry logic" | 12.0 s | 10.7 s | -11% |
+| "kotlin coroutine cancellation" | 11.3 s | 11.3 s | 0% |
 
-**LATENCY FINDING (brief §5 budget = 5s/query; §2 trigger-2 case):** Per-query
-latency is **2-3x over budget**. Retrieval correctness is directionally
-sensible (build query → README; retry/HTTP query → metrics test; coroutine
-query → test framework) but the latency bar is missed by a wide margin.
+Retrieval correctness directionally sensible across both runs:
+build → ms-core-api README, retry/HTTP → metrics test extensions,
+coroutine → test framework. Top-1 paths converge between sessions; top-1
+scores differ slightly (post-revision ColBERT sees full chunks, no
+truncation, so scores shift).
 
-Bottleneck root cause: **ColBERTv2 rerank of the top-100 dense candidates on
-CPU.** The MaxSim docFromText pass batches 100 candidate chunks at bsize=8
-(~12-13 forward passes), each ~1s on the spike's CPU env. Nomic dense
-encoding of the query alone is ~1s; numpy cosine over 3418 chunks is
-sub-millisecond. So the bulk of the 11-14s is the rerank stage.
+**LATENCY FINDING (still §2-trigger-2):** the protocol revision dropped latency
+by ~10-15%, NOT the ~4x predicted by the original "bsize 8 -> 32 = 4x fewer
+forward passes" math. Per-query latency remains **10-13 s, 2-3x over the
+brief §5 5s budget.**
 
-**Tactical levers available** (defer the decision to the spike report's
-verdict section; do NOT silently change the protocol):
-1. Reduce `dense_k` from 100 → 30. Expected: ~3-4s rerank → ~5s total.
-   Quality tradeoff: smaller candidate pool may miss good answers the dense
-   stage ranked 30-100.
-2. Skip the ColBERT rerank entirely; return Nomic-only top-5. Expected: ~1-2s
-   total. Quality tradeoff: loses ColBERT's late-interaction reranking.
-3. Switch to GPU. Out-of-scope for spike-1's CPU host; M1.0 architecture
-   spike decides production GPU/CPU.
-4. Accept the 11-14s and measure agent behavior as-is. Claude Code's MCP
-   tool timeout is generous (60s+); the agent should not actually time out.
-   The latency may still influence behavior (hesitation, fewer optimus_*
-   calls).
+#### Truncation: confirmed fixed
 
-**Recommendation pending PM call:** option 4 + report the finding. The
-spike's measurement integrity comes from running the same retrieval surface
-across all conditions; tuning mid-spike contaminates the comparison.
+| Metric | Session 2 (chunk_size=1500) | Session 3 (chunk_size=600) | Δ |
+|---|---|---|---|
+| ColBERTv2 `doc_maxlen` | 220 tokens | 220 tokens | unchanged |
+| Mean chunk size (chars) | 1325 | 572 | 2.3x smaller |
+| Mean chunk size (tokens) | 383 | 167 | 2.3x smaller |
+| Chunks exceeding doc_maxlen | 2,979 / 3,418 (87.2%) | 836 / 7,915 (10.6%) | 8.2x reduction |
+| Tokens discarded at rerank | 604,036 (46.2% of all indexed) | 35,351 (2.7% of all indexed) | **17.1x reduction** |
+| ColBERT query-time `bsize` | 8 (hardcoded) | 32 (= `ColBERTConfig().bsize` default) | matches upstream |
 
-### PRIORITY 1 next-session: protocol revision (the 46% truncation finding)
+**Translation:** the original 46% information-loss confound is essentially
+eliminated. The residual 2.7% truncation comes from a small tail of
+pathological chunks (e.g. SQL with weird tokenization, generated/binary-adjacent
+text); the dominant Kotlin content is well within doc_maxlen. ColBERT rerank
+now scores nearly all of the indexed content, so the measurement is no longer
+"Optimus + 46% blindness" -- it is Optimus.
 
-After the working pipeline landed and the 11-14s/query observation surfaced, a
-follow-up diagnostic (`diag-tokens.py`) revealed the latency is masking a real
-setup defect. The numbers, measured against the live 3418-chunk ms-superrepo
-index:
-
-| Metric | Value | Source |
-|---|---|---|
-| ColBERTv2 `doc_maxlen` | **220 tokens** | `ColBERTConfig()` default |
-| Mean chunk size | 1325 chars / **383 tokens** | indexer at `chunk_size=1500` |
-| Chars per token (Kotlin code) | 3.46 | empirical |
-| Chunks exceeding doc_maxlen | **2,979 / 3,418 (87.2%)** | tokenize-and-count |
-| Tokens silently truncated at rerank | **604,036 (46.2% of all indexed tokens)** | empirical |
-| ColBERT query-time `bsize` (ours) | 8 | hardcoded in `Checkpoint.docFromText(..., bsize=8)` |
-| ColBERT default `bsize` | 32 | `ColBERTConfig()` default |
-
-**Translation:** Nomic dense ranks against the full 1500-char chunk. ColBERT
-rerank only sees the first ~660 chars of each candidate. The other half is
-indexed and embedded but contributes zero to the final score. We are paying
-full indexing cost to produce ~46% dead weight at the measurement that
-actually matters.
-
-**Planned revision (deferred to a fresh session for thermal reasons):**
-
-1. **chunk_size 1500 -> ~700 chars** (~210 tokens; just under ColBERT's
-   doc_maxlen with margin for special tokens). Stays under truncation
-   boundary. ~2x chunks (~6800 instead of 3418). Re-indexing time ~80 min
-   (still under brief §2 trigger-2 2-hour soft budget).
-2. **ColBERT `bsize` 8 -> 32** in `two_stage_search()`'s `docFromText`
-   call. Matches ColBERT's own default. ~4x fewer forward passes per query.
-3. Re-smoke against the new index; expected per-query latency **2-3 s**
-   (within brief §5 budget).
-4. Document the revision as a session-3 methodology revision in the eventual
-   spike-1 retrieval report; cross-condition comparability is preserved
-   because the same protocol is applied across no-Optimus / Optimus +
-   accurate / Optimus + drifted conditions.
-
-**Reproducer:** `diag-tokens.py` (committed at the spike-workspace level).
-Run from the WSL2 venv after the ms-superrepo index has been built:
-
+Reproducer (post-revision):
 ```bash
 source ~/optimus-spike-venv/bin/activate
 cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval
-python diag-tokens.py
+python diag-tokens.py ~/.optimus-spike/index-msrepo-r600
 ```
 
-**Host resources (no constraint, FYI):** WSL2 reported 20 CPU cores, 10.4 GB
-RAM, 9.0 GB available at finding time. The bottleneck is not cores or
-memory; it is the ColBERT forward-pass count at small `bsize` against
-oversized chunks. Raising container resource caps would not move the needle;
-the levers above would.
+#### Why latency didn't drop ~4x as predicted
+
+The PRIORITY 1 finding from session 2 framed the bsize lever as "4x fewer
+forward passes per query." That count claim is correct -- at bsize=32 vs 8 we
+issue ~3-4 batches per query instead of ~13. But on **CPU**, wall-clock cost
+per batch scales with total tokens computed inside the batch, not with batch
+overhead. CPU does not parallelize the way GPU does across batch items, so
+the bsize lever buys back only per-batch loop overhead, not actual computation.
+
+The chunk_size 1500→600 lever helps slightly because each rerank doc now
+encodes fewer real tokens (mean 167 vs 220-truncated-from-383 before). But the
+session-2 setup was ALREADY truncating to 220 tokens at the ColBERT side, so
+the per-doc encode cost was bounded at the same value either way. The
+~10-15% latency improvement comes from (a) reduced batch-loop overhead at
+bsize=32 and (b) some real per-doc encode savings on chunks that are now ~167
+tokens instead of 220-truncated.
+
+Math check (rough):
+- 100 docs × ~167 mean tokens × ~6e-4 s/token (this CPU) ≈ 10 s rerank
+- Plus ~1 s Nomic query encode + sub-ms numpy cosine = ~11 s observed. Matches.
+
+Conclusion: **the rerank-stage CPU cost on this host is genuinely ~10s for a
+top-100 candidate pool, regardless of bsize.** To get under 5s, the remaining
+tactical levers are dense_k or skipping rerank or GPU. All have quality or
+scope tradeoffs.
+
+### PRIORITY 1 APPLIED 2026-05-13 (protocol revision -- truncation finding)
+
+**Status: APPLIED. Truncation fixed (17x reduction). Latency partial (still over budget).**
+
+Commits in this revision:
+- `indexer.py` `DEFAULT_CHUNK_SIZE` 1500 -> 600. (Original PRIORITY 1 plan was
+  ~700 chars; TDD with an adversarial-dense Kotlin fixture surfaced that 700
+  produces 224 tokens for the densest realistic code -- 4 over `doc_maxlen=220`.
+  Dropped to 600 so the dense worst case stays at ~192 tokens with 20-token
+  safety margin. Per brief §1 implementation-tactics authority.)
+- `server-stdio.py` `DEFAULT_RERANK_BSIZE = 32` hoisted as a module constant
+  + used at the `docFromText` call site. Pinned via
+  `tests/test_rerank_bsize.py` to track `ColBERTConfig().bsize` upstream.
+- `server-stdio.py` query-time `_stdout_to_stderr` wrapping. Session 2's
+  wrapper only covered model load; ColBERT's `QueryTokenizer.tensorize` and
+  `Checkpoint.docFromText` ALSO emit debug messages per query, which (a)
+  corrupted MCP JSON-RPC framing on the second smoke pass and (b) added
+  measurable wall-clock cost. Now wrapped per query.
+- `tests/test_chunk_colbert_invariant.py` -- new test, pins
+  `DEFAULT_CHUNK_SIZE` against ColBERT's `doc_maxlen` via the real ColBERTv2
+  tokenizer on a dense Kotlin fixture. Failed at 1500, failed at 700, passes
+  at 600.
+- `tests/test_rerank_bsize.py` -- new test, pins `DEFAULT_RERANK_BSIZE`
+  equal to `ColBERTConfig().bsize`.
+- `diag-tokens.py` parametrized to accept `<index_dir>` argv or
+  `OPTIMUS_DIAG_INDEX_DIR` env var (default unchanged).
+- `reindex-r600.sh` -- one-off re-index launcher (idempotent), authored via
+  the Write tool to dodge the wsl.exe heredoc-quoting trap.
+
+**Empirical verdict on the revision (see tables in "Empirical observations"
+above):**
+
+| Goal | Predicted | Actual | Verdict |
+|---|---|---|---|
+| Truncation 46% → ~0% | ~0% | 2.7% | ✅ achieved (17x reduction) |
+| Chunks truncated 87% → ~0% | ~0% | 10.6% | ✅ mostly achieved (8.2x reduction) |
+| Latency 11-14s → 2-3s | 2-3 s | 10-13 s | ❌ NOT achieved (~10-15% improvement only) |
+| Index time ≤ 2 hr | ~80 min | ~33 min | ✅ better than predicted |
+
+**Cross-condition comparability:** preserved. The revised protocol is the
+same protocol applied across no-Optimus / Optimus+accurate / Optimus+drifted
+conditions. The 11-14s ⇒ 10-13s shift removes a confound (information loss)
+without introducing a new one.
+
+**Open question for next session (or PM in-place):** the brief §5 5s/query
+budget is still missed by 2-3x. Options:
+
+1. **Accept 10-13s and proceed.** Brief §2 trigger-2 case, documented; the
+   spike still measures retrieval BEHAVIOR (cross-condition comparable),
+   even if it doesn't hit the latency target. Claude Code's MCP tool timeout
+   is generous (60s+); the agent does not actually time out. Latency may
+   still influence behavior (hesitation, fewer `optimus_*` calls) -- which
+   is itself signal.
+
+2. **Reduce `dense_k` from 100 → 30** at the rerank stage. Expected wall-clock
+   ~3-4 s rerank → ~5 s total. Quality tradeoff: smaller candidate pool may
+   miss good answers the dense stage ranked 30-100. Still cross-condition
+   comparable if applied uniformly.
+
+3. **Skip ColBERT rerank** for the spike, return Nomic-only top-5. Expected
+   ~1-2 s. Quality tradeoff: loses late-interaction reranking entirely.
+
+4. **GPU**: out of spike-1 scope; M1.0 architecture decides production GPU/CPU.
+
+**Recommendation (Zolt, codewizard call):** option 1 (accept and proceed)
+unless Dustin/PM prefers option 2 (dense_k=30, single additional lever).
+Either choice preserves cross-condition comparability. Option 1 captures the
+"Optimus as built" measurement honestly; option 2 captures "Optimus tuned to
+budget" measurement and risks burying the rerank-CPU finding under a
+tighter dial.
+
+**Host resources (FYI -- still not the bottleneck):** WSL2 reports 20 CPU
+cores, 10.4 GB RAM, 9.0 GB available. The bottleneck is per-token CPU encode
+cost in ColBERTv2's MaxSim path, not cores or memory. M1's Dockerfile +
+M1.0's architecture spike are the appropriate places to revisit GPU/CPU.
+
+**Latest smoke artifacts (gitignored):**
+- `results/smoke-msrepo-r600.py` -- the post-revision smoke client (same
+  3 queries as session 2's `smoke-msrepo.py`).
+- `results/smoke-msrepo-r600.txt` -- raw output.
+- `~/.optimus-spike/index-msrepo-r600/` -- new index dir (manifest stamps
+  `chunk_size: 600`, `total_chunks: 7915`). Old `index-msrepo/` retained
+  for cross-comparison.
 
 ### MCP-client smoke artifacts
 
