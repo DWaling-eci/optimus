@@ -1,5 +1,5 @@
 # Spike-1 GPU stack (post-2026-05-13 close-out per
-# docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md Phase 0).
+# docs/specs/2026-05-13-spike-1-closeout-design.md Phase 0).
 #
 # Forked from spike/pre-m1-gpu-feasibility/requirements-gpu.txt which the
 # 2026-05-13 GPU feasibility probe validated end-to-end (19x speedup on RTX

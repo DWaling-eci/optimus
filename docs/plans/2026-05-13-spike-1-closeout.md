@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12 (WSL2 venv), torch 2.5.1+cu121, sentence-transformers, colbert-ai 0.2.22, mcp Python SDK, pytest. Runtime: Claude Code on Windows host talking to spike-1 server over stdio MCP; server runs in WSL2 with GPU passthrough.
 
-**Approved spec:** `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md` (Dustin-approved 2026-05-13).
+**Approved spec:** `docs/specs/2026-05-13-spike-1-closeout-design.md` (Dustin-approved 2026-05-13).
 
 ---
 
@@ -153,7 +153,7 @@ def select_device() -> str:
     """Autodetect compute device. Returns 'cuda' if available, else 'cpu'.
 
     M1.0 production direction: GPU default with CPU fallback. Spike-1 close-out
-    runs on GPU per `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md`
+    runs on GPU per `docs/specs/2026-05-13-spike-1-closeout-design.md`
     section 3; CPU path is retained but unexercised in the empirical runs.
     """
     import torch
@@ -268,7 +268,7 @@ Open `spike/pre-m1-retrieval/requirements.txt` and replace the entire file with:
 
 ```
 # Spike-1 GPU stack (post-2026-05-13 close-out per
-# docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md Phase 0).
+# docs/specs/2026-05-13-spike-1-closeout-design.md Phase 0).
 #
 # Forked from spike/pre-m1-gpu-feasibility/requirements-gpu.txt which the
 # 2026-05-13 GPU feasibility probe validated end-to-end (19x speedup on RTX
@@ -476,7 +476,7 @@ Add a new section at the top of "How to run" pointing at the GPU stack rationale
 ```markdown
 ### GPU stack (post-close-out 2026-05-13)
 
-The spike-1 server runs on GPU per `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md` Phase 0. The wrapper patch (1-line `d_emb.to(device, dtype)` in MaxSim matmul) is validated against the probe's `spike/pre-m1-gpu-feasibility/server-stdio-gpu.py` artifact. Device autodetect via `server_stdio.select_device()`; CPU fallback retained but unexercised in the empirical runs.
+The spike-1 server runs on GPU per `docs/specs/2026-05-13-spike-1-closeout-design.md` Phase 0. The wrapper patch (1-line `d_emb.to(device, dtype)` in MaxSim matmul) is validated against the probe's `spike/pre-m1-gpu-feasibility/server-stdio-gpu.py` artifact. Device autodetect via `server_stdio.select_device()`; CPU fallback retained but unexercised in the empirical runs.
 
 requirements.txt switched to `torch==2.5.1+cu121` and the matching cu12 wheel stack. Persistent venv at `~/optimus-spike-gpu-venv/` is reused across all 24 Phase-2 empirical sessions.
 ```
@@ -496,7 +496,7 @@ git add spike/pre-m1-retrieval/server-stdio.py \
 git commit -m "$(cat <<'EOF'
 spike(pre-m1-retrieval): GPU port -- device autodetect + wrapper patch + cu121 stack
 
-Phase 0 of spike-1 close-out per docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md.
+Phase 0 of spike-1 close-out per docs/specs/2026-05-13-spike-1-closeout-design.md.
 Ports the probe-validated wrapper patch into spike-1's production server with
 runtime device autodetect; switches requirements.txt to the GPU stack; updates
 README install + run sections to reference the persistent GPU venv. Probe smoke
@@ -804,7 +804,7 @@ Expected: all 4 tests FAIL with `FileNotFoundError` or similar (drift-fixture.py
 
 Applies a task-specific filesystem mutation (1 file added, 1 directory renamed)
 to the test target. Manual invocation by spike runner at the drift moment per
-docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md section 4 Phase 1C.
+docs/specs/2026-05-13-spike-1-closeout-design.md section 4 Phase 1C.
 
 CLI:
     python drift-fixture.py --task <1|2|3|4>   # apply drift for task N
@@ -1073,8 +1073,8 @@ Each drift lands inside a submodule working tree; `--reset` is submodule-aware (
 git add spike/pre-m1-retrieval/drift-fixture.py \
         spike/pre-m1-retrieval/tasks.md \
         spike/pre-m1-retrieval/tests/test_drift_fixture.py \
-        docs/superpowers/plans/2026-05-13-spike-1-closeout.md \
-        docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md \
+        docs/plans/2026-05-13-spike-1-closeout.md \
+        docs/specs/2026-05-13-spike-1-closeout-design.md \
         spike/pre-m1-retrieval/README.md
 ```
 
@@ -1084,7 +1084,7 @@ git add spike/pre-m1-retrieval/drift-fixture.py \
 git commit -m "$(cat <<'EOF'
 spike(pre-m1-retrieval): Phase 1 close -- drift fixture + tasks.md + plan/spec corrections
 
-Phase 1 of spike-1 close-out per docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md.
+Phase 1 of spike-1 close-out per docs/specs/2026-05-13-spike-1-closeout-design.md.
 
 Deliverables:
 - drift-fixture.py: per-task add+rename drift for H3, git-backed submodule-aware
@@ -1446,7 +1446,7 @@ notable: "no anomalies observed; system remained stable throughout".]
 
 ## Cross-references
 
-- Spec: `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md`
+- Spec: `docs/specs/2026-05-13-spike-1-closeout-design.md`
 - Brief: `docs/spikes/spike-1-prep-brief.md`
 - Hypothesis framing: `docs/decomp/pre-M1-spikes.md`
 - Locked retrieval stack: `docs/decisions/secure-singleton-mcp-baseline.md`
@@ -1583,7 +1583,7 @@ git add docs/spikes/spike-1-retrieval-report.md \
 git commit -m "$(cat <<'EOF'
 spike(pre-m1-retrieval): COMPLETE -- H1/H2/H3 verdicts + 24-session empirical artifacts
 
-Closes spike-1 per docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md.
+Closes spike-1 per docs/specs/2026-05-13-spike-1-closeout-design.md.
 24 Claude Code sessions on ms-superrepo (4 tasks x 3 conditions x 2 runs, N=4
 override of brief 2x trigger). Cold-reviewer POSITIVE.
 
@@ -1650,7 +1650,7 @@ Escalation triggers from brief section 2 trigger 2 remain active throughout. The
 
 ## Cross-references
 
-- Approved spec: `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md`
+- Approved spec: `docs/specs/2026-05-13-spike-1-closeout-design.md`
 - Source brief: `docs/spikes/spike-1-prep-brief.md`
 - Hypothesis framing + gate logic: `docs/decomp/pre-M1-spikes.md`
 - Locked retrieval stack: `docs/decisions/secure-singleton-mcp-baseline.md`

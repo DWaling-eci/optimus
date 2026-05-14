@@ -68,7 +68,7 @@ on WSL2 venv.
 
 ### GPU stack (post-close-out 2026-05-13)
 
-The spike-1 server runs on GPU per `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md` Phase 0. The wrapper patch (1-line `d_emb.to(device, dtype)` in MaxSim matmul) is validated against the probe's `spike/pre-m1-gpu-feasibility/server-stdio-gpu.py` artifact. Device autodetect via `server_stdio.select_device()`; CPU fallback retained but unexercised in the empirical runs.
+The spike-1 server runs on GPU per `docs/specs/2026-05-13-spike-1-closeout-design.md` Phase 0. The wrapper patch (1-line `d_emb.to(device, dtype)` in MaxSim matmul) is validated against the probe's `spike/pre-m1-gpu-feasibility/server-stdio-gpu.py` artifact. Device autodetect via `server_stdio.select_device()`; CPU fallback retained but unexercised in the empirical runs.
 
 requirements.txt switched to `torch==2.5.1+cu121` and the matching cu12 wheel stack. Persistent venv at `~/optimus-spike-gpu-venv/` is reused across all 24 Phase-2 empirical sessions.
 

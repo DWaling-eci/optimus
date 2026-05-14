@@ -43,7 +43,7 @@ def select_device() -> str:
     """Autodetect compute device. Returns 'cuda' if available, else 'cpu'.
 
     M1.0 production direction: GPU default with CPU fallback. Spike-1 close-out
-    runs on GPU per `docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md`
+    runs on GPU per `docs/specs/2026-05-13-spike-1-closeout-design.md`
     section 3; CPU path is retained but unexercised in the empirical runs.
     """
     import torch

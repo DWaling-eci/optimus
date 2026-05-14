@@ -2,7 +2,7 @@
 
 Applies a task-specific filesystem mutation (1 file added, 1 directory renamed)
 to the test target. Manual invocation by spike runner at the drift moment per
-docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md section 4 Phase 1C.
+docs/specs/2026-05-13-spike-1-closeout-design.md section 4 Phase 1C.
 
 CLI:
     python drift-fixture.py --task <1|2|3|4>   # apply drift for task N
