@@ -15,7 +15,7 @@ Produce a POSITIVE-cold-reviewed `docs/spikes/spike-1-retrieval-report.md` with 
 - **H2** -- killing memory leaves no retrieval gap that only memory was filling.
 - **H3** -- drifted `DIRECTORY_INDEX.md` is NOT materially worse than no `DIRECTORY_INDEX.md`.
 
-Verdicts are backed by 24 Claude Code session artifacts and the chat-report toolkit's structured JSON, executed against `c:\ms-superrepo\` on the GPU-ported spike-1 server.
+Verdicts are backed by 24 Claude Code session artifacts and the chat-report toolkit's structured JSON, executed against `c:\_Source\ms-superrepo\` on the GPU-ported spike-1 server.
 
 ---
 
@@ -92,7 +92,7 @@ Phase 4: Single commit + memory bump
 
 **1A: `<ms-superrepo>/DIRECTORY_INDEX.md`**
 
-- Path: `c:\ms-superrepo\DIRECTORY_INDEX.md`. **NOT** in optimus repo (brief section 6).
+- Path: `c:\_Source\ms-superrepo\DIRECTORY_INDEX.md`. **NOT** in optimus repo (brief section 6).
 - Scope: top-2 levels with one-line summaries + selectively deeper detail in 1-2 "most-touched" areas, where most-touched is defined by which subsystems the 4 tasks exercise.
 - Hand-authored by Dustin. Estimated 0.5-1 session.
 - Format: Markdown, no schema lock. Full schema lands in M2 templates.
@@ -122,7 +122,7 @@ Spec pins shape and criteria. Concrete tasks drafted by Dustin against ms-superr
 
 - CLI: `python drift-fixture.py --task <1|2|3|4>` applies per-task drift. `--reset` reverses it.
 - Per-task drift content: 1 file added in a `DIRECTORY_INDEX.md`-listed directory relevant to that task. 1 directory renamed in a relevant area.
-- Idempotent. `--reset` returns ms-superrepo to git-clean.
+- Idempotent. `--reset` returns ms-superrepo to git-clean. ms-superrepo is a submodule superrepo and every drift lands inside a submodule working tree, so `--reset` resets each affected submodule (the set `DRIFT_PLANS` touches) individually, then the superrepo -- a superrepo-level `git reset`/`clean` does not recurse into submodules.
 - Drift moment: invoked manually by Dustin after the agent's 3rd tool call OR 60s elapsed, whichever comes first (brief section 3).
 - Drift content per task documented inline in the script + cited in the report.
 - **Does not modify `DIRECTORY_INDEX.md`.** That is the simulation: stale index, drifted code.
@@ -135,10 +135,11 @@ Spec pins shape and criteria. Concrete tasks drafted by Dustin against ms-superr
 
 ```
 1. Reset ms-superrepo:
-     git -C c:\ms-superrepo reset --hard HEAD && git -C c:\ms-superrepo clean -fd
-   (DIRECTORY_INDEX.md is committed inside ms-superrepo per Phase 1A, so the
-   reset restores it. clean -fd removes any untracked drift files from a prior
-   run.)
+     python spike/pre-m1-retrieval/drift-fixture.py --reset
+   (Submodule-aware. ms-superrepo is a submodule superrepo, so a superrepo-level
+   git reset/clean does NOT reach drift applied inside submodule working trees;
+   the drift fixture resets each affected submodule + the superrepo. DIRECTORY_INDEX.md
+   is committed inside ms-superrepo per Phase 1A, so the reset restores it.)
 
 2. Configure MCP + dir-index per condition:
      - Baseline: no .mcp.json entry for optimus; DIRECTORY_INDEX.md removed from
@@ -147,7 +148,7 @@ Spec pins shape and criteria. Concrete tasks drafted by Dustin against ms-superr
        DIRECTORY_INDEX.md present.
      - Optimus + drifted: same as accurate; drift fixture invoked at drift moment.
 
-3. Start fresh Claude Code session, fresh CWD at c:\ms-superrepo.
+3. Start fresh Claude Code session, fresh CWD at c:\_Source\ms-superrepo.
 
 4. Run task prompt.
 

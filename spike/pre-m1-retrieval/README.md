@@ -21,7 +21,7 @@ Retrieval-only Optimus + a hand-authored DIRECTORY_INDEX.md changes Claude Code'
 
 ## Test target
 
-**`c:\ms-superrepo\`** (reused from spike-2). Real ~3.4GB monorepo, multi-language. Origin already removed per spike-2 protocol. Subset path `~/.spike-test-corpus/` available if full repo is too large for spike-1's indexing budget.
+**`c:\_Source\ms-superrepo\`** (reused from spike-2). Real ~3.4GB monorepo, multi-language. Origin already removed per spike-2 protocol. Subset path `~/.spike-test-corpus/` available if full repo is too large for spike-1's indexing budget.
 
 ## Layout
 
@@ -35,7 +35,7 @@ spike/pre-m1-retrieval/
   .venv/                     -- spike-local virtualenv (gitignored)
 ```
 
-DIRECTORY_INDEX.md lives at the **test target's** repo root (`c:\ms-superrepo\DIRECTORY_INDEX.md`), NOT inside optimus. Per brief §6: it's a property of the codebase being indexed.
+DIRECTORY_INDEX.md lives at the **test target's** repo root (`c:\_Source\ms-superrepo\DIRECTORY_INDEX.md`), NOT inside optimus. Per brief §6: it's a property of the codebase being indexed.
 
 ## Scope discipline
 

@@ -37,7 +37,7 @@
 
 | Path | Purpose |
 |---|---|
-| `c:/ms-superrepo/DIRECTORY_INDEX.md` | Hand-authored, lives at test-target root. NOT in optimus. |
+| `c:/_Source/ms-superrepo/DIRECTORY_INDEX.md` | Hand-authored, lives at test-target root. NOT in optimus. |
 
 ---
 
@@ -518,11 +518,11 @@ Phase 1A and 1B/1C can run in parallel. 1B (task authoring) depends partly on 1A
 ### Task 10: Author DIRECTORY_INDEX.md at ms-superrepo root (Dustin)
 
 **Files:**
-- Create: `c:/ms-superrepo/DIRECTORY_INDEX.md` (outside optimus repo)
+- Create: `c:/_Source/ms-superrepo/DIRECTORY_INDEX.md` (outside optimus repo)
 
 - [ ] **Step 1: Author the dir-index**
 
-Dustin hand-authors `c:/ms-superrepo/DIRECTORY_INDEX.md`. Per design spec section 4 Phase 1A:
+Dustin hand-authors `c:/_Source/ms-superrepo/DIRECTORY_INDEX.md`. Per design spec section 4 Phase 1A:
 
 - Scope: top-2 levels of ms-superrepo with one-line summaries per directory.
 - Selectively-deeper detail (3rd level + per-file notes) in 1-2 areas the 4 controlled tasks will exercise (the "most-touched areas").
@@ -556,7 +556,7 @@ Last hand-authored: 2026-05-13. Spike-1 H3 fixture.
 - [ ] **Step 2: Verify dir-index file present**
 
 ```bash
-ls -la c:/ms-superrepo/DIRECTORY_INDEX.md
+ls -la c:/_Source/ms-superrepo/DIRECTORY_INDEX.md
 ```
 
 Expected: file exists, non-empty.
@@ -568,10 +568,10 @@ Expected: file exists, non-empty.
 - [ ] **Step 1: Commit inside ms-superrepo**
 
 ```bash
-cd c:/ms-superrepo
+cd c:/_Source/ms-superrepo
 git add DIRECTORY_INDEX.md
 git commit -m "docs: add DIRECTORY_INDEX.md (spike-1 H3 fixture, hand-authored 2026-05-13)"
-git -C c:/ms-superrepo log --oneline -1
+git -C c:/_Source/ms-superrepo log --oneline -1
 ```
 
 Expected: commit recorded inside ms-superrepo. NO push (origin already removed per spike-2 protocol).
@@ -579,7 +579,7 @@ Expected: commit recorded inside ms-superrepo. NO push (origin already removed p
 Verify no remote is configured:
 
 ```bash
-git -C c:/ms-superrepo remote -v
+git -C c:/_Source/ms-superrepo remote -v
 ```
 
 Expected: empty output. If a remote exists, ABORT -- DIRECTORY_INDEX.md must not push upstream.
@@ -810,12 +810,15 @@ CLI:
     python drift-fixture.py --task <1|2|3|4>   # apply drift for task N
     python drift-fixture.py --reset            # revert all drift
 
-Reset is git-backed (the script runs `git checkout -- .` + `git clean -fd` inside
-the target root, which reverses both the renamed dir and the added file).
+Reset is git-backed AND submodule-aware. The test target (c:/_Source/ms-superrepo)
+is a SUPERREPO of git submodules, and every drift lands inside a submodule working
+tree. A superrepo-level `git reset --hard` + `git clean -fd` does NOT reach inside
+submodules, so --reset resets each affected submodule individually (the set of
+submodules DRIFT_PLANS touches), then the superrepo.
 
 Target root resolution:
     1. env var DRIFT_TARGET_ROOT (used by tests)
-    2. default: c:/ms-superrepo
+    2. default: c:/_Source/ms-superrepo
 """
 
 from __future__ import annotations
@@ -828,39 +831,42 @@ from pathlib import Path
 
 
 # Per-task drift plans. Each task: ONE add (file path relative to target_root)
-# + ONE rename (oldpath -> newpath). Update these path templates to match the
-# real ms-superrepo layout that the 4 controlled tasks exercise.
+# + ONE rename (oldpath -> newpath). Retargeted at the real ms-superrepo layout
+# (Task 14 Step 2): every path is a real directory, listed in
+# c:/_Source/ms-superrepo/DIRECTORY_INDEX.md, inside the git submodule that the
+# matching controlled task (spike/pre-m1-retrieval/tasks.md) exercises.
 #
-# IMPORTANT: the added file must land in a directory the DIRECTORY_INDEX.md
-# lists, and the renamed directory must be one the dir-index references. That's
-# the realistic-drift simulation the brief specifies.
+# CONSTRAINT: each task's `add` file MUST live inside its `rename` source dir.
+# tests/test_drift_fixture.py's fake_target fixture only materializes `rename`
+# source dirs; an `add` parent outside that subtree would never get created. It
+# is also realistic drift -- a file added to a dir that then gets renamed.
 
 DRIFT_PLANS = {
     1: {
-        "add": "ms-core/config/drift_added_1.kt",
-        "rename": ("ms-core/config", "ms-core/config_renamed_1"),
+        "add": "ms-core-api/src/test/drift_added_1.kt",
+        "rename": ("ms-core-api/src/test", "ms-core-api/src/test_renamed_1"),
     },
     2: {
-        "add": "ms-core-api/routes/drift_added_2.kt",
-        "rename": ("ms-core-api/routes", "ms-core-api/routes_renamed_2"),
+        "add": "ms-core-api/config/custom/drift_added_2.json",
+        "rename": ("ms-core-api/config/custom", "ms-core-api/config/custom_renamed_2"),
     },
     3: {
-        "add": "ms-core/services/drift_added_3.kt",
-        "rename": ("ms-core/services", "ms-core/services_renamed_3"),
+        "add": "ms-option-api/config/custom/drift_added_3.json",
+        "rename": ("ms-option-api/config/custom", "ms-option-api/config/custom_renamed_3"),
     },
     4: {
-        "add": "ms-core-api/handlers/drift_added_4.kt",
-        "rename": ("ms-core-api/handlers", "ms-core-api/handlers_renamed_4"),
+        "add": "ms-event-store/config/drift_added_4.kt",
+        "rename": ("ms-event-store/config", "ms-event-store/config_renamed_4"),
     },
 }
 
 
 def resolve_target_root() -> Path:
-    """Pick target root from env or fall back to c:/ms-superrepo."""
+    """Pick target root from env or fall back to c:/_Source/ms-superrepo."""
     env = os.environ.get("DRIFT_TARGET_ROOT")
     if env:
         return Path(env).resolve()
-    return Path("c:/ms-superrepo").resolve()
+    return Path("c:/_Source/ms-superrepo").resolve()
 
 
 def is_git_repo(path: Path) -> bool:
@@ -888,8 +894,11 @@ def apply_drift(task_n: int, target_root: Path) -> int:
     rename_from = target_root / plan["rename"][0]
     rename_to = target_root / plan["rename"][1]
 
-    # Idempotency check: if both already drifted, exit 0 with notice.
-    if add_path.exists() and rename_to.exists() and not rename_from.exists():
+    # Idempotency check: the rename is the load-bearing signal. If the target
+    # dir exists and the source is gone, drift is already applied -- exit 0.
+    # (Cannot key on add_path: `add` lives inside `rename_from`, so the added
+    # file moves to rename_to/... on apply and add_path no longer exists.)
+    if rename_to.exists() and not rename_from.exists():
         print(f"task {task_n} drift already applied (idempotent skip)", file=sys.stderr)
         return 0
 
@@ -902,8 +911,10 @@ def apply_drift(task_n: int, target_root: Path) -> int:
         )
         return 3
 
-    # Apply
-    add_path.parent.mkdir(parents=True, exist_ok=True)
+    # Apply: add the file first (inside rename_from, asserted present above),
+    # then rename the dir -- the added file moves with the rename to rename_to/...
+    # If a future DRIFT_PLANS entry placed `add` outside rename_from, write_text
+    # raises FileNotFoundError loudly rather than a silent mkdir masking it.
     add_path.write_text(
         f"// spike-1 drift fixture -- task {task_n}, added 2026-05-13\n"
     )
@@ -915,17 +926,47 @@ def apply_drift(task_n: int, target_root: Path) -> int:
     return 0
 
 
+def affected_submodules() -> list[str]:
+    """Submodule dirs DRIFT_PLANS touches -- the first path component of every
+    add/rename path. Used to scope --reset to exactly those submodules."""
+    subs: set[str] = set()
+    for plan in DRIFT_PLANS.values():
+        subs.add(Path(plan["add"]).parts[0])
+        subs.add(Path(plan["rename"][0]).parts[0])
+    return sorted(subs)
+
+
 def reset_drift(target_root: Path) -> int:
-    """Reset target_root to git HEAD + clean untracked. Returns 0 on success."""
+    """Reset target_root to git HEAD + clean untracked. Returns 0 on success.
+
+    target_root is a submodule superrepo; all drift lands inside submodule
+    working trees. A superrepo-level reset/clean does not recurse into
+    submodules, so reset each affected submodule individually first, then the
+    superrepo. Scoped to the submodules DRIFT_PLANS touches -- not all 27.
+    """
     if not is_git_repo(target_root):
         print(
             f"error: {target_root} is not a git repo; cannot reset",
             file=sys.stderr,
         )
         return 4
+    # Reverse drift inside each affected submodule.
+    subs = affected_submodules()
+    for sub in subs:
+        sub_path = target_root / sub
+        if not sub_path.is_dir():
+            # Keeps --reset safe to run on a partially-set-up target.
+            print(f"reset: submodule dir {sub} not found, skipping", file=sys.stderr)
+            continue
+        subprocess.run(["git", "reset", "--hard", "HEAD"], cwd=sub_path, check=True)
+        subprocess.run(["git", "clean", "-fd"], cwd=sub_path, check=True)
+    # Then the superrepo itself (gitlinks + any superrepo-level untracked).
     subprocess.run(["git", "reset", "--hard", "HEAD"], cwd=target_root, check=True)
     subprocess.run(["git", "clean", "-fd"], cwd=target_root, check=True)
-    print(f"reset {target_root} to HEAD + clean", file=sys.stderr)
+    print(
+        f"reset {target_root}: {len(subs)} submodule(s) + superrepo to HEAD + clean",
+        file=sys.stderr,
+    )
     return 0
 
 
@@ -950,14 +991,24 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-- [ ] **Step 2: Update DRIFT_PLANS to match ms-superrepo's real layout**
+- [ ] **Step 2: DRIFT_PLANS is retargeted at the real ms-superrepo layout**
 
-The path templates in `DRIFT_PLANS` are placeholders matched to common Kotlin-monorepo shapes. After Task 12 produces `tasks.md`, edit `DRIFT_PLANS` so each task's `add` directory and `rename` source are:
-1. Real paths in ms-superrepo.
-2. Listed in `c:/ms-superrepo/DIRECTORY_INDEX.md` from Task 10.
-3. Relevant to that task's controlled prompt (the drift should be in an area the task actually navigates).
+`DRIFT_PLANS` above is already retargeted (no longer placeholders). Each entry satisfies:
+1. Every path is real in `c:/_Source/ms-superrepo` (all four `rename` sources verified to exist).
+2. Each `rename` source dir is listed in `c:/_Source/ms-superrepo/DIRECTORY_INDEX.md` (Task 10).
+3. Each task's drift lands inside the submodule its controlled prompt (`tasks.md`) exercises: Task 1 -> `ms-core-api/src/test`, Task 2 -> `ms-core-api/config/custom`, Task 3 -> `ms-option-api/config/custom`, Task 4 -> `ms-event-store/config`. (Task 4's prompt spans both `ms-event-source` and `ms-event-store`; per spec Phase 1C the drift is exactly one add+rename, so one submodule is picked -- `ms-event-store`, the ingestion / persistence / write-back locus central to the prompt's "write-back logic retries" clause.)
+4. Each `add` file lives **inside** its `rename` source dir -- required because `tests/test_drift_fixture.py`'s `fake_target` fixture only materializes `rename` source dirs.
 
-This edit makes the fixture realistic. Without it, the drift fires in places the agent never looks, which weakens H3 per spec section 4 Phase 1C.
+Confirm the four `rename` source dirs still exist before the Task 15 smoke:
+
+```bash
+ls -d c:/_Source/ms-superrepo/ms-core-api/src/test \
+      c:/_Source/ms-superrepo/ms-core-api/config/custom \
+      c:/_Source/ms-superrepo/ms-option-api/config/custom \
+      c:/_Source/ms-superrepo/ms-event-store/config
+```
+
+Without realistic retargeting the drift fires where the agent never looks, which weakens H3 per spec section 4 Phase 1C.
 
 - [ ] **Step 3: Run tests to verify drift fixture passes**
 
@@ -978,7 +1029,7 @@ Note: the `test_apply_is_idempotent` test allows either returncode 0 OR a gracef
 - [ ] **Step 1: Confirm ms-superrepo is at a clean baseline**
 
 ```bash
-cd c:/ms-superrepo
+cd c:/_Source/ms-superrepo
 git status
 git log --oneline -1
 ```
@@ -990,24 +1041,29 @@ Expected: working tree clean (DIRECTORY_INDEX.md committed in Task 11). Note the
 ```bash
 cd c:/_Source/optimus/spike/pre-m1-retrieval
 python drift-fixture.py --task 1
-cd c:/ms-superrepo
-git status     # should show the renamed dir + new untracked file
-ls -la ms-core/config_renamed_1/  # or whatever DRIFT_PLANS[1] specifies
-ls -la ms-core/config 2>&1 || echo "good, original dir is gone"
+cd c:/_Source/ms-superrepo
+git status     # ms-core-api submodule shows dirty (renamed dir + new untracked file)
+ls -la ms-core-api/src/test_renamed_1/   # DRIFT_PLANS[1] rename target; holds drift_added_1.kt
+ls -la ms-core-api/src/test 2>&1 || echo "good, original dir is gone"
 
 cd c:/_Source/optimus/spike/pre-m1-retrieval
 python drift-fixture.py --reset
-cd c:/ms-superrepo
-git status     # should be clean
-ls -la ms-core/config/   # should be back
-ls -la ms-core/config_renamed_1 2>&1 || echo "good, renamed dir is gone"
+cd c:/_Source/ms-superrepo
+git status     # should be clean (superrepo + the 3 affected submodules)
+ls -la ms-core-api/src/test/   # should be back
+ls -la ms-core-api/src/test_renamed_1 2>&1 || echo "good, renamed dir is gone"
 ```
 
 Expected: drift applies, git status reflects mutations, reset returns to clean state.
 
 - [ ] **Step 3: Repeat for tasks 2, 3, 4**
 
-Same loop. Quick spot-check that DRIFT_PLANS entries don't reference paths that don't exist in ms-superrepo. If a `rename` source path is missing, edit DRIFT_PLANS to a real path before continuing.
+Same loop, substituting each task's DRIFT_PLANS paths:
+- Task 2: `ms-core-api/config/custom` -> `ms-core-api/config/custom_renamed_2`
+- Task 3: `ms-option-api/config/custom` -> `ms-option-api/config/custom_renamed_3`
+- Task 4: `ms-event-store/config` -> `ms-event-store/config_renamed_4`
+
+Each drift lands inside a submodule working tree; `--reset` is submodule-aware (resets the affected submodules + the superrepo). Quick spot-check that DRIFT_PLANS entries don't reference paths that don't exist in ms-superrepo. If a `rename` source path is missing, edit DRIFT_PLANS to a real path before continuing.
 
 ### Task 16: Commit Phase 1
 
@@ -1016,19 +1072,40 @@ Same loop. Quick spot-check that DRIFT_PLANS entries don't reference paths that 
 ```bash
 git add spike/pre-m1-retrieval/drift-fixture.py \
         spike/pre-m1-retrieval/tasks.md \
-        spike/pre-m1-retrieval/tests/test_drift_fixture.py
+        spike/pre-m1-retrieval/tests/test_drift_fixture.py \
+        docs/superpowers/plans/2026-05-13-spike-1-closeout.md \
+        docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md \
+        spike/pre-m1-retrieval/README.md
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
 git commit -m "$(cat <<'EOF'
-spike(pre-m1-retrieval): Phase 1 prep -- drift fixture + tasks.md + DIRECTORY_INDEX
+spike(pre-m1-retrieval): Phase 1 close -- drift fixture + tasks.md + plan/spec corrections
 
 Phase 1 of spike-1 close-out per docs/superpowers/specs/2026-05-13-spike-1-closeout-design.md.
-Per-task drift fixture with git-backed reset; 4 controlled-task definitions
-authored against ms-superrepo; DIRECTORY_INDEX.md hand-authored and committed
-inside ms-superrepo's local clone (origin removed; no upstream push).
+
+Deliverables:
+- drift-fixture.py: per-task add+rename drift for H3, git-backed submodule-aware
+  --reset. DRIFT_PLANS targets the ms-core-api / ms-option-api / ms-event-store
+  submodules.
+- tests/test_drift_fixture.py: 4 tests, green in the GPU venv; smoke-verified
+  against the live ms-superrepo (apply/reset for all 4 tasks; superrepo + 27
+  submodules clean, HEAD unchanged).
+- tasks.md: 4 controlled-task definitions (Dustin-authored, Zolt-reviewed).
+
+Plan/spec/README corrections surfaced during execution:
+- Test target is C:\_Source\ms-superrepo, not c:\ms-superrepo (corrected
+  throughout, incl. WSL /mnt/c paths + Claude session-dir slug).
+- ms-superrepo is a 27-submodule superrepo: a superrepo-level git reset/clean
+  does not reach drift inside submodule working trees. drift-fixture.py --reset
+  is submodule-aware; spec Phase 1C + Phase 2 loop + plan Task 18 updated to match.
+- drift-fixture.py reference code: idempotency keys on the rename (not add_path,
+  which moves with the rename); DRIFT_PLANS retargeted at the real layout.
+
+DIRECTORY_INDEX.md is hand-authored + committed inside ms-superrepo's local clone
+(origin removed; no upstream push).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -1093,17 +1170,18 @@ The 10-step per-session loop runs 6 times for Task 1. The same loop runs in Task
 - [ ] **Step 1: Reset ms-superrepo to baseline**
 
 ```bash
-cd c:/ms-superrepo
-git reset --hard HEAD
-git clean -fd
-git log --oneline -1   # should show Task 11's DIRECTORY_INDEX.md commit
+# Submodule-aware reset. A superrepo-level git reset/clean does NOT reach drift
+# inside submodule working trees -- the drift fixture handles superrepo + the
+# affected submodules.
+python c:/_Source/optimus/spike/pre-m1-retrieval/drift-fixture.py --reset
+git -C c:/_Source/ms-superrepo log --oneline -1   # should show Task 11's DIRECTORY_INDEX.md commit
 ```
 
 - [ ] **Step 2: Configure per-condition fixtures**
 
 CONDITION = baseline:
 ```bash
-cd c:/ms-superrepo
+cd c:/_Source/ms-superrepo
 mv DIRECTORY_INDEX.md DIRECTORY_INDEX.md.bak    # hide dir-index for baseline
 # do NOT start the optimus server
 # do NOT add .mcp.json entry for optimus
@@ -1111,28 +1189,28 @@ mv DIRECTORY_INDEX.md DIRECTORY_INDEX.md.bak    # hide dir-index for baseline
 
 CONDITION = optimus-accurate:
 ```bash
-cd c:/ms-superrepo
+cd c:/_Source/ms-superrepo
 ls DIRECTORY_INDEX.md     # confirm present (no .bak rename)
 # In a separate terminal, start the spike-1 server in WSL2:
 wsl.exe -- bash -c 'source ~/optimus-spike-gpu-venv/bin/activate && \
   cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval && \
   OPTIMUS_SPIKE_INDEX_DIR=~/.optimus-spike/index \
-  OPTIMUS_SPIKE_TARGET_ROOT=/mnt/c/ms-superrepo \
+  OPTIMUS_SPIKE_TARGET_ROOT=/mnt/c/_Source/ms-superrepo \
   python server-stdio.py'
-# Ensure c:/ms-superrepo/.mcp.json registers the optimus server (point at the WSL server stdio)
+# Ensure c:/_Source/ms-superrepo/.mcp.json registers the optimus server (point at the WSL server stdio)
 ```
 
 CONDITION = optimus-drifted:
 Same as accurate (dir-index present, server running, .mcp.json wired) -- DO NOT pre-apply drift; drift fires mid-task.
 
-- [ ] **Step 3: Open a fresh Claude Code session at c:/ms-superrepo**
+- [ ] **Step 3: Open a fresh Claude Code session at c:/_Source/ms-superrepo**
 
 ```
-cd c:/ms-superrepo
+cd c:/_Source/ms-superrepo
 claude
 ```
 
-The session JSONL lands at `~/.claude/projects/C---ms-superrepo/<session-uuid>.jsonl`.
+The session JSONL lands at `~/.claude/projects/C---Source-ms-superrepo/<session-uuid>.jsonl`.
 
 - [ ] **Step 4: Paste the task prompt verbatim from spike/pre-m1-retrieval/tasks.md**
 
@@ -1151,19 +1229,19 @@ For baseline and accurate conditions, skip this step.
 
 - [ ] **Step 6: Let the agent complete the task**
 
-Wait until Claude Code finishes its response loop. Note the session UUID (visible in the prompt or via `ls -t ~/.claude/projects/C---ms-superrepo/`).
+Wait until Claude Code finishes its response loop. Note the session UUID (visible in the prompt or via `ls -t ~/.claude/projects/C---Source-ms-superrepo/`).
 
 - [ ] **Step 7: Capture the session UUID + verify session JSONL exists**
 
 ```bash
-ls -la ~/.claude/projects/C---ms-superrepo/<session-uuid>.jsonl
+ls -la ~/.claude/projects/C---Source-ms-superrepo/<session-uuid>.jsonl
 ```
 
 - [ ] **Step 8: Run chat-report against the session**
 
 ```bash
 python tools/ai-chat-report/claudecode/chat-report.py <session-uuid> \
-    --cwd c:/ms-superrepo \
+    --cwd c:/_Source/ms-superrepo \
     --shape locked \
     --format json \
     --out spike/pre-m1-retrieval/results/
@@ -1297,7 +1375,7 @@ Use this skeleton (fill with real evidence from `results/`):
 
 **Status:** [PASS / PARTIAL / FAIL] -- cold-reviewer POSITIVE [date].
 **Spike workspace:** `spike/pre-m1-retrieval/`
-**Test target:** `c:/ms-superrepo/` (Kotlin monorepo, origin removed per spike-2 protocol)
+**Test target:** `c:/_Source/ms-superrepo/` (Kotlin monorepo, origin removed per spike-2 protocol)
 **Compute:** GPU (NVIDIA RTX A500 Laptop, cu121 wheel via `optimus-spike-gpu-venv`)
 **Session count:** 24 (4 tasks x 3 conditions x 2 runs)
 
@@ -1476,7 +1554,7 @@ GPU install / venv / run-section updates already landed in Task 9. Now add a new
 ```markdown
 ## Phase 2 empirical results (2026-05-13)
 
-24 Claude Code sessions on `c:/ms-superrepo/` (4 controlled tasks x 3 conditions x 2 runs, N=4 explicit override of brief's 2x trigger). Hypothesis verdicts and full evidence in:
+24 Claude Code sessions on `c:/_Source/ms-superrepo/` (4 controlled tasks x 3 conditions x 2 runs, N=4 explicit override of brief's 2x trigger). Hypothesis verdicts and full evidence in:
 
 - **Report:** `docs/spikes/spike-1-retrieval-report.md` (cold-reviewer POSITIVE)
 - **Per-session artifacts:** `spike/pre-m1-retrieval/results/` (gitignored)
