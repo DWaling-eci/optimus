@@ -5,7 +5,7 @@ install_probe.py). Loads an on-disk index and asserts the
 docs/specs/2026-05-14-spike-1-path-contract-design.md contract:
   - manifest schema_version == 2
   - every chunk file_path is a workspace-relative POSIX string
-    (no leading '/', no '\\', no '..' segment, no drive letter)
+    (no leading '/', no '\\', no '..' segment, no colon)
 
 Usage:
     python verify-index.py <index-dir>
@@ -45,8 +45,8 @@ def verify(index_dir: Path) -> int:
             violations.append(f"chunk {r.chunk_id}: backslash in {p!r}")
         if ".." in p.split("/"):
             violations.append(f"chunk {r.chunk_id}: '..' segment in {p!r}")
-        if len(p) >= 2 and p[1] == ":":
-            violations.append(f"chunk {r.chunk_id}: drive letter in {p!r}")
+        if ":" in p:
+            violations.append(f"chunk {r.chunk_id}: colon (drive letter?) in {p!r}")
 
     if violations:
         for v in violations[:20]:
