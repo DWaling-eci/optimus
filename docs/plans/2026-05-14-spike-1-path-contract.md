@@ -1196,6 +1196,16 @@ git -C c:/_Source/ms-superrepo log --oneline -1
 
 Expected: clean working tree; HEAD is the `DIRECTORY_INDEX.md` commit (`286c47f` or later). If dirty, run `python c:/_Source/optimus/spike/pre-m1-retrieval/drift-fixture.py --reset` first.
 
+- [ ] **Step 1b: Confirm every submodule is initialized**
+
+`git_tracked_files` skips uninitialized submodules with only a single stderr line — which scrolls past in the build's model output, producing a quietly incomplete index. An uninitialized submodule does NOT show in `git status`; it shows in `git submodule status` with a leading `-`. Gate on it explicitly:
+
+```bash
+git -C c:/_Source/ms-superrepo submodule status | findstr /b /c:"-"
+```
+
+Expected: **no output** (exit 1 from `findstr` is fine — it means no match, i.e. nothing uninitialized). Any `-`-prefixed line is an uninitialized submodule — STOP and run `git -C c:/_Source/ms-superrepo submodule update --init --recursive` before continuing. (Bash equivalent: `git -C c:/_Source/ms-superrepo submodule status | grep '^-'`.)
+
 - [ ] **Step 2: Build the index against the full superrepo**
 
 ```bash

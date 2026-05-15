@@ -32,12 +32,14 @@
 | `spike/pre-m1-retrieval/README.md` | New GPU-stack install instructions; new venv path; persistent venv reused across 24 sessions. |
 | `C:/Users/dwaling/.claude/projects/C---Source-optimus/memory/optimus-kickoff-state.md` | Spike-1 outcome bump. |
 | `C:/Users/dwaling/.claude/projects/C---Source-optimus/memory/MEMORY.md` | Index entry refresh. |
+| `spike/pre-m1-retrieval/_index_format.py`, `indexer.py`, `server-stdio.py` | Path contract + git-tracked corpus -- see `docs/plans/2026-05-14-spike-1-path-contract.md`. |
 
 **Files to create (outside optimus repo):**
 
 | Path | Purpose |
 |---|---|
 | `c:/_Source/ms-superrepo/DIRECTORY_INDEX.md` | Hand-authored, lives at test-target root. NOT in optimus. |
+| `c:/_Source/ms-superrepo/.mcp.json` | Registers the spike-1 WSL2 server with Claude Code. Committed inside ms-superrepo; toggled per condition (`.bak` for baseline). |
 
 ---
 
@@ -1114,6 +1116,28 @@ EOF
 
 ---
 
+## Phase 1.5 -- Path contract + full-superrepo index rebuild
+
+**Added 2026-05-14.** Phase-2 prep surfaced a Windows<->WSL2 path-domain gap and a
+stale/wrong-corpus index. Both are resolved by a separate, self-contained plan
+that MUST complete before Phase 2 starts:
+
+- **Plan:** `docs/plans/2026-05-14-spike-1-path-contract.md`
+- **Spec:** `docs/specs/2026-05-14-spike-1-path-contract-design.md`
+
+Deliverables Phase 2 depends on:
+- `_index_format.py` / `indexer.py` / `server-stdio.py` exchange workspace-relative
+  POSIX paths (schema_version 2). The Phase-0 interim index
+  (`~/.optimus-spike/index-msrepo-r600`, ms-core + ms-core-api subset, absolute
+  paths) is superseded -- Task 8's exit-gate smoke used it and remains valid as a
+  historical record.
+- A full-superrepo git-tracked index at `~/.optimus-spike/index-msrepo-full-r600/`.
+- `c:/_Source/ms-superrepo/.mcp.json` registering the spike-1 server.
+
+The Phase 2 task steps below are updated to reference these artifacts.
+
+---
+
 ## Phase 2 -- Empirical runs (24 Claude Code sessions, manual)
 
 This phase is **operator-driven**, not subagent-driven. Dustin runs each session in Claude Code on the Windows host; the spike-1 server runs in WSL2 listening on stdio MCP. Each session loop produces one JSON artifact under `spike/pre-m1-retrieval/results/`.
@@ -1183,25 +1207,29 @@ CONDITION = baseline:
 ```bash
 cd c:/_Source/ms-superrepo
 mv DIRECTORY_INDEX.md DIRECTORY_INDEX.md.bak    # hide dir-index for baseline
-# do NOT start the optimus server
-# do NOT add .mcp.json entry for optimus
+mv .mcp.json .mcp.json.bak                       # hide optimus server registration
+# Claude Code starts no optimus server when .mcp.json is absent.
 ```
 
 CONDITION = optimus-accurate:
 ```bash
 cd c:/_Source/ms-superrepo
-ls DIRECTORY_INDEX.md     # confirm present (no .bak rename)
-# In a separate terminal, start the spike-1 server in WSL2:
-wsl.exe -- bash -c 'source ~/optimus-spike-gpu-venv/bin/activate && \
-  cd /mnt/c/_Source/optimus/spike/pre-m1-retrieval && \
-  OPTIMUS_SPIKE_INDEX_DIR=~/.optimus-spike/index \
-  OPTIMUS_SPIKE_TARGET_ROOT=/mnt/c/_Source/ms-superrepo \
-  python server-stdio.py'
-# Ensure c:/_Source/ms-superrepo/.mcp.json registers the optimus server (point at the WSL server stdio)
+ls DIRECTORY_INDEX.md .mcp.json    # confirm both present (no .bak rename)
+# No manual server start: .mcp.json registers the spike-1 server and Claude Code
+# owns its lifecycle -- it spawns the WSL2 stdio server on session start.
 ```
 
 CONDITION = optimus-drifted:
-Same as accurate (dir-index present, server running, .mcp.json wired) -- DO NOT pre-apply drift; drift fires mid-task.
+Same as accurate (dir-index present, `.mcp.json` present) -- DO NOT pre-apply
+drift; drift fires mid-task.
+
+> **NOTE (2026-05-14, flag for Dustin):** Wiring the server through `.mcp.json`
+> means Claude Code starts a fresh server per session -- the server cache is
+> always cold at session start. This supersedes Task 18 Step 10's "leave the
+> server running between runs (warm cache acceptable)" note. It is the more
+> production-faithful setup, but it removes warm-cache runs from the protocol.
+> Confirm this is the intended Phase 2 protocol before starting the 24 sessions;
+> if warm-cache runs are still wanted, they need an explicit manual-server path.
 
 - [ ] **Step 3: Open a fresh Claude Code session at c:/_Source/ms-superrepo**
 
@@ -1265,7 +1293,7 @@ Use `<condition>` in {baseline, accurate, drifted} and `<R>` in {1, 2}.
 For optimus-accurate / optimus-drifted runs only:
 
 ```bash
-wsl.exe -- bash -c 'cp ~/.optimus-spike/index/server.jsonl /mnt/c/_Source/optimus/spike/pre-m1-retrieval/results/task1-<condition>-run<R>.server.jsonl'
+wsl.exe -- bash -c 'cp ~/.optimus-spike/index-msrepo-full-r600/server.jsonl /mnt/c/_Source/optimus/spike/pre-m1-retrieval/results/task1-<condition>-run<R>.server.jsonl'
 ```
 
 Then:
