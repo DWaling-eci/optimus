@@ -87,17 +87,31 @@ def chunk_file(content: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
 def iter_records(target_root: Path, walker=walk_target):
     """Yield ChunkRecords for every file `walker` enumerates under target_root.
 
+    A `walker` yields (absolute Path, str content) tuples; it does NOT need to
+    relativize -- `iter_records` resolves each path and rebases it against
+    target_root. Paths a walker yields MUST be under target_root.
+
     file_path on each record is workspace-relative POSIX (relative to
     target_root) per docs/specs/2026-05-14-spike-1-path-contract-design.md.
     Relativization happens here, at index-build time, so the persisted index is
     portable and mount-location-independent.
+
+    `walker` defaults to walk_target here; `main()` keeps its own keyword-only
+    default (Task 5 of the path-contract plan switches main()'s default to an
+    auto-selector).
     """
     from _index_format import ChunkRecord
 
     target_root = target_root.resolve()
     chunk_id = 0
     for file_path, content in walker(target_root):
-        rel = file_path.resolve().relative_to(target_root).as_posix()
+        try:
+            rel = file_path.resolve().relative_to(target_root).as_posix()
+        except ValueError:
+            raise ValueError(
+                f"walker yielded {file_path!r}, which is not under "
+                f"target_root={target_root!r}. Check the walker implementation."
+            ) from None
         for start, text in chunk_file(content):
             yield ChunkRecord(
                 chunk_id=chunk_id,
