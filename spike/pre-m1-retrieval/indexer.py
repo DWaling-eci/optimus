@@ -159,6 +159,16 @@ def git_tracked_files(target_root: Path):
             yield file_path, content
 
 
+def select_walker(target_root: Path):
+    """Pick the corpus enumerator: git-tracked for git working trees, else walk.
+
+    Git-tracked is production-faithful (build output gitignored, uncommitted
+    scratch excluded). Non-git trees -- test fixtures -- fall back to the
+    filtered filesystem walk.
+    """
+    return git_tracked_files if (target_root / ".git").exists() else walk_target
+
+
 def chunk_file(content: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
     """Yield (start_offset, chunk_text) tuples for the file content.
 
@@ -234,14 +244,17 @@ def persist_index(out_dir: Path, records, embeddings, target_root: Path) -> None
     )
 
 
-def main(target_root: Path, out_dir: Path = DEFAULT_INDEX_DIR, *, walker=walk_target) -> None:
+def main(target_root: Path, out_dir: Path = DEFAULT_INDEX_DIR, *, walker=None) -> None:
     """Build index for target_root, write to out_dir.
 
-    `walker` selects the corpus enumeration strategy. Task 5 of the path-contract
-    plan changes the default to auto-select git-tracked enumeration for git
-    working trees; until then it is a plain filtered filesystem walk.
+    Corpus enumeration auto-selects: git-tracked files for git working trees
+    (production-faithful), else a filtered filesystem walk. Pass `walker`
+    explicitly to override.
     """
     target_root = target_root.resolve()
+    if walker is None:
+        walker = select_walker(target_root)
+
     records = list(iter_records(target_root, walker))
     if not records:
         raise RuntimeError(f"no indexable files under {target_root}")

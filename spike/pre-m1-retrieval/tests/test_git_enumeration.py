@@ -90,3 +90,13 @@ def test_exact_tracked_set(git_superrepo):
         "vendored/sub_tracked.py",
     }
     assert _rels(git_superrepo) == expected
+
+
+def test_select_walker_git_repo_uses_git_tracked(git_superrepo):
+    from indexer import git_tracked_files, select_walker
+    assert select_walker(git_superrepo) is git_tracked_files
+
+
+def test_select_walker_plain_dir_uses_walk(tmp_path):
+    from indexer import select_walker, walk_target
+    assert select_walker(tmp_path) is walk_target
