@@ -50,6 +50,7 @@ def test_index_round_trips_relative_paths(tmp_path):
         assert not r.file_path.startswith("/")
         assert "\\" not in r.file_path
         assert ".." not in r.file_path.split("/")
+        assert ":" not in r.file_path  # no Windows drive letter
     assert [r.file_path for r in records] == rels
 
 
@@ -65,6 +66,8 @@ def test_index_is_mount_independent(tmp_path):
     root_a = tmp_path / "mount_a" / "ms-superrepo"
     root_b = tmp_path / "mount_b" / "elsewhere" / "ms-superrepo"
     for root in (root_a, root_b):
+        # confine_path calls Path.resolve(); the file must exist for the
+        # realpath syscall to execute identically on all platforms.
         (root / "ms-core-api" / "src").mkdir(parents=True)
         (root / rel).write_text("class House")
 
