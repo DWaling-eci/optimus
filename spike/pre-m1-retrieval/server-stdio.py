@@ -74,10 +74,13 @@ def confined_relative(user_path: str, target_root: Path) -> str:
     The outbound half of the path contract
     (docs/specs/2026-05-14-spike-1-path-contract-design.md): Optimus never emits
     an absolute path across the MCP boundary. Wraps confine_path -- the security
-    gate is unchanged; this only reshapes the confined result.
+    gate is unchanged; this only reshapes the confined result. Resolves
+    target_root up front so the function is correct whether the caller passes a
+    resolved path or not.
     """
+    target_root = target_root.resolve()
     confined = confine_path(user_path, target_root)
-    return confined.relative_to(target_root.resolve()).as_posix()
+    return confined.relative_to(target_root).as_posix()
 
 
 def load_index(index_dir: Path):
@@ -255,7 +258,11 @@ def main() -> None:
                 rel_path = confined_relative(r["file_path"], target_root)
                 confined.append({**r, "file_path": rel_path})
             except ValueError:
-                continue  # Drop any chunk whose path escapes target_root
+                # Path escapes target_root -- a corrupt index entry or a
+                # build/runtime target_root mismatch. Silent drop is safe for
+                # spike-1 (single static root); revisit when M1 allows the
+                # runtime root to diverge from the index's build-time root.
+                continue
 
         with log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps({

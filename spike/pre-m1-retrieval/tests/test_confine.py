@@ -94,3 +94,11 @@ def test_confined_relative_rejects_symlink_escape(tmp_path):
         pytest.skip("symlinks not supported on this filesystem")
     with pytest.raises(ValueError, match="outside"):
         confined_relative(str(link), tmp_path)
+
+
+def test_confined_relative_resolves_unresolved_target_root(tmp_path):
+    """confined_relative owns target_root resolution -- callers may pass it unresolved."""
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "y.txt").write_text("ok")
+    unresolved = tmp_path / "sub" / ".."  # normalizes to tmp_path, but not pre-resolved
+    assert confined_relative("sub/y.txt", unresolved) == "sub/y.txt"
