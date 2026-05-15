@@ -166,6 +166,8 @@ def select_walker(target_root: Path):
     scratch excluded). Non-git trees -- test fixtures -- fall back to the
     filtered filesystem walk.
     """
+    # .exists() (not .is_dir()) is deliberate: a git worktree or submodule root
+    # has .git as a FILE, not a directory, and git ls-files works fine from it.
     return git_tracked_files if (target_root / ".git").exists() else walk_target
 
 
@@ -190,9 +192,8 @@ def iter_records(target_root: Path, walker=walk_target):
     Relativization happens here, at index-build time, so the persisted index is
     portable and mount-location-independent.
 
-    `walker` defaults to walk_target here; `main()` keeps its own keyword-only
-    default (Task 5 of the path-contract plan switches main()'s default to an
-    auto-selector).
+    `walker` defaults to walk_target here so iter_records stays callable
+    independently; main() auto-selects via select_walker when not overridden.
     """
     from _index_format import ChunkRecord
 
