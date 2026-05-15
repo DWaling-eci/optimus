@@ -32,7 +32,9 @@ def test_search_returns_chunks_inside_target(tiny_corpus, tmp_path):
     build_index(tiny_corpus, tmp_path)
     results = server_stdio.two_stage_search("http client", tmp_path, top_k=2)
     for r in results:
-        assert Path(r["file_path"]).resolve().is_relative_to(tiny_corpus.resolve())
+        # Path contract: file_path is workspace-relative; join onto the target root.
+        resolved = (tiny_corpus / r["file_path"]).resolve()
+        assert resolved.is_relative_to(tiny_corpus.resolve())
 
 
 def test_search_result_shape(tiny_corpus, tmp_path):

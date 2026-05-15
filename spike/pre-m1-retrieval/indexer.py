@@ -84,6 +84,31 @@ def chunk_file(content: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
         yield start, content[start:start + chunk_size]
 
 
+def iter_records(target_root: Path, walker=walk_target):
+    """Yield ChunkRecords for every file `walker` enumerates under target_root.
+
+    file_path on each record is workspace-relative POSIX (relative to
+    target_root) per docs/specs/2026-05-14-spike-1-path-contract-design.md.
+    Relativization happens here, at index-build time, so the persisted index is
+    portable and mount-location-independent.
+    """
+    from _index_format import ChunkRecord
+
+    target_root = target_root.resolve()
+    chunk_id = 0
+    for file_path, content in walker(target_root):
+        rel = file_path.resolve().relative_to(target_root).as_posix()
+        for start, text in chunk_file(content):
+            yield ChunkRecord(
+                chunk_id=chunk_id,
+                file_path=rel,
+                start_offset=start,
+                end_offset=start + len(text),
+                text=text,
+            )
+            chunk_id += 1
+
+
 def embed_chunks(chunk_texts):
     """Run Nomic CodeRankEmbed over chunk texts. No query prefix at index time.
 
@@ -111,23 +136,15 @@ def persist_index(out_dir: Path, records, embeddings, target_root: Path) -> None
     )
 
 
-def main(target_root: Path, out_dir: Path = DEFAULT_INDEX_DIR) -> None:
-    """Build index for target_root, write to out_dir."""
-    from _index_format import ChunkRecord
+def main(target_root: Path, out_dir: Path = DEFAULT_INDEX_DIR, *, walker=walk_target) -> None:
+    """Build index for target_root, write to out_dir.
 
-    records: list = []
-    chunk_id = 0
-    for file_path, content in walk_target(target_root):
-        for start, text in chunk_file(content):
-            records.append(ChunkRecord(
-                chunk_id=chunk_id,
-                file_path=file_path,
-                start_offset=start,
-                end_offset=start + len(text),
-                text=text,
-            ))
-            chunk_id += 1
-
+    `walker` selects the corpus enumeration strategy. Task 5 of the path-contract
+    plan changes the default to auto-select git-tracked enumeration for git
+    working trees; until then it is a plain filtered filesystem walk.
+    """
+    target_root = target_root.resolve()
+    records = list(iter_records(target_root, walker))
     if not records:
         raise RuntimeError(f"no indexable files under {target_root}")
 

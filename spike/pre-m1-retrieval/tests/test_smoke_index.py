@@ -24,13 +24,13 @@ def test_index_tiny_corpus_end_to_end(tiny_corpus, tmp_path):
     assert embeddings.shape == (manifest["total_chunks"], 768)
     assert embeddings.dtype == np.float32
 
-    file_names = {r.file_path.name for r in records}
+    file_names = {r.file_path.rsplit("/", 1)[-1] for r in records}
     assert "foo.py" in file_names
     assert "bar.py" in file_names
     assert "baz.md" in file_names
 
     # bar.py is sized to span multiple chunks
-    bar_chunks = [r for r in records if r.file_path.name == "bar.py"]
+    bar_chunks = [r for r in records if r.file_path.rsplit("/", 1)[-1] == "bar.py"]
     assert len(bar_chunks) >= 2
 
     # chunk_id matches row index

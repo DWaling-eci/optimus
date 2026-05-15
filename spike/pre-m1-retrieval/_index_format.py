@@ -1,10 +1,10 @@
 """On-disk chunk-index format. Shared by indexer (write) and server (read).
 
 Format:
-  manifest.json       -- schema_version, target_root, chunk_size, model_id,
+  manifest.json       -- schema_version (2), target_root, chunk_size, model_id,
                          total_chunks, indexed_at_iso, embedding_dim
-  chunks.jsonl        -- one JSON per line: chunk_id, file_path, start_offset,
-                         end_offset, text
+  chunks.jsonl        -- one JSON per line: chunk_id, file_path (workspace-relative
+                         POSIX string), start_offset, end_offset, text
   embeddings.npy      -- numpy 2D float32 array, shape (total_chunks, embedding_dim).
                          Row index == chunk_id.
 
@@ -22,13 +22,13 @@ from typing import Iterable
 import numpy as np
 
 
-INDEX_SCHEMA_VERSION = 1
+INDEX_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
 class ChunkRecord:
     chunk_id: int
-    file_path: Path
+    file_path: str  # workspace-relative POSIX path (relative to target_root)
     start_offset: int
     end_offset: int
     text: str
@@ -60,7 +60,7 @@ def persist_index(
         for r in records:
             f.write(json.dumps({
                 "chunk_id": r.chunk_id,
-                "file_path": str(r.file_path),
+                "file_path": r.file_path,
                 "start_offset": r.start_offset,
                 "end_offset": r.end_offset,
                 "text": r.text,
@@ -85,6 +85,14 @@ def load_index(index_dir: Path) -> tuple[dict, list[ChunkRecord], np.ndarray]:
         raise FileNotFoundError(f"no manifest.json at {index_dir}")
 
     manifest = json.loads(manifest_path.read_text())
+    schema = manifest.get("schema_version")
+    if schema != INDEX_SCHEMA_VERSION:
+        raise ValueError(
+            f"index at {index_dir} has schema_version {schema!r}; this build "
+            f"requires schema_version {INDEX_SCHEMA_VERSION}. Schema 1 indexes "
+            f"store absolute paths and must be rebuilt (see "
+            f"docs/specs/2026-05-14-spike-1-path-contract-design.md)."
+        )
     embeddings = np.load(index_dir / "embeddings.npy")
 
     records: list[ChunkRecord] = []
@@ -93,7 +101,7 @@ def load_index(index_dir: Path) -> tuple[dict, list[ChunkRecord], np.ndarray]:
             d = json.loads(line)
             records.append(ChunkRecord(
                 chunk_id=d["chunk_id"],
-                file_path=Path(d["file_path"]),
+                file_path=d["file_path"],
                 start_offset=d["start_offset"],
                 end_offset=d["end_offset"],
                 text=d["text"],
