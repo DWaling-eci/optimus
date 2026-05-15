@@ -59,3 +59,38 @@ def test_confine_path_relative_resolved_against_root(tmp_path):
 def test_confine_path_dotdot_escape_raises(tmp_path):
     with pytest.raises(ValueError, match="outside"):
         confine_path("../escape.txt", tmp_path)
+
+
+confined_relative = server_stdio.confined_relative
+
+
+def test_confined_relative_returns_posix_relative(tmp_path):
+    inside = tmp_path / "sub" / "file.txt"
+    inside.parent.mkdir()
+    inside.write_text("ok")
+    result = confined_relative(str(inside), tmp_path)
+    assert result == "sub/file.txt"
+    assert not result.startswith("/")
+    assert "\\" not in result
+
+
+def test_confined_relative_accepts_relative_input(tmp_path):
+    (tmp_path / "x.txt").write_text("ok")
+    assert confined_relative("x.txt", tmp_path) == "x.txt"
+
+
+def test_confined_relative_rejects_dotdot_escape(tmp_path):
+    with pytest.raises(ValueError, match="outside"):
+        confined_relative("../escape.txt", tmp_path)
+
+
+def test_confined_relative_rejects_symlink_escape(tmp_path):
+    target = tmp_path.parent / "real_secret.txt"
+    target.write_text("escape")
+    link = tmp_path / "link.txt"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this filesystem")
+    with pytest.raises(ValueError, match="outside"):
+        confined_relative(str(link), tmp_path)

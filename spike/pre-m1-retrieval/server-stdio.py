@@ -68,6 +68,18 @@ def confine_path(user_path: str, target_root: Path) -> Path:
     return resolved
 
 
+def confined_relative(user_path: str, target_root: Path) -> str:
+    """Confine user_path to target_root, then return it workspace-relative (POSIX).
+
+    The outbound half of the path contract
+    (docs/specs/2026-05-14-spike-1-path-contract-design.md): Optimus never emits
+    an absolute path across the MCP boundary. Wraps confine_path -- the security
+    gate is unchanged; this only reshapes the confined result.
+    """
+    confined = confine_path(user_path, target_root)
+    return confined.relative_to(target_root.resolve()).as_posix()
+
+
 def load_index(index_dir: Path):
     """Read on-disk chunk index produced by indexer.py.
 
@@ -183,7 +195,7 @@ def two_stage_search(query: str, index_dir: Path, top_k: int = 5):
 
     return [
         {
-            "file_path": str(rec.file_path),
+            "file_path": rec.file_path,
             "start_offset": rec.start_offset,
             "end_offset": rec.end_offset,
             "score": score,
@@ -235,12 +247,13 @@ def main() -> None:
         results = two_stage_search(query, index_dir, top_k=5)
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
 
-        # Path-confine result paths (defensive; indexer should already guarantee this)
+        # Path-confine + reshape result paths to workspace-relative -- the path
+        # contract's outbound invariant. confine_path still raises on escape.
         confined = []
         for r in results:
             try:
-                confined_path = confine_path(r["file_path"], target_root)
-                confined.append({**r, "file_path": str(confined_path)})
+                rel_path = confined_relative(r["file_path"], target_root)
+                confined.append({**r, "file_path": rel_path})
             except ValueError:
                 continue  # Drop any chunk whose path escapes target_root
 
