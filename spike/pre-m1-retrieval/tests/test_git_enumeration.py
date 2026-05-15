@@ -1,0 +1,80 @@
+"""git_tracked_files: tracked superrepo + submodule files only.
+
+Builds a real git superrepo with one initialized submodule, then asserts the
+enumerator includes tracked + submodule files and excludes untracked,
+gitignored, and the submodule gitlink entry.
+"""
+
+import subprocess
+from pathlib import Path
+
+import pytest
+
+from indexer import _submodule_paths, git_tracked_files
+
+
+def _git(cwd, *args):
+    subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True)
+
+
+@pytest.fixture
+def git_superrepo(tmp_path):
+    # --- submodule origin ---
+    sub_origin = tmp_path / "sub_origin"
+    sub_origin.mkdir()
+    _git(sub_origin, "init", "-q")
+    _git(sub_origin, "config", "user.email", "t@spike")
+    _git(sub_origin, "config", "user.name", "spike")
+    (sub_origin / "sub_tracked.py").write_text("# submodule tracked\n")
+    _git(sub_origin, "add", "-A")
+    _git(sub_origin, "commit", "-q", "-m", "sub baseline")
+
+    # --- superrepo ---
+    root = tmp_path / "superrepo"
+    root.mkdir()
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@spike")
+    _git(root, "config", "user.name", "spike")
+    (root / "root_tracked.py").write_text("# root tracked\n")
+    (root / ".gitignore").write_text("build/\n")
+    (root / "build").mkdir()
+    (root / "build" / "artifact.js").write_text("// built\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-q", "-m", "root baseline")
+    # Local-path submodule transport must be explicitly allowed.
+    _git(root, "-c", "protocol.file.allow=always", "submodule", "add",
+         str(sub_origin), "vendored")
+    _git(root, "commit", "-q", "-m", "add submodule")
+    # Untracked scratch -- created after the last commit, never added.
+    (root / "untracked_scratch.py").write_text("# never committed\n")
+    return root
+
+
+def _rels(root):
+    return {
+        p.resolve().relative_to(root.resolve()).as_posix()
+        for p, _ in git_tracked_files(root)
+    }
+
+
+def test_includes_root_and_submodule_files(git_superrepo):
+    rels = _rels(git_superrepo)
+    assert "root_tracked.py" in rels
+    assert "vendored/sub_tracked.py" in rels
+
+
+def test_excludes_untracked(git_superrepo):
+    assert "untracked_scratch.py" not in _rels(git_superrepo)
+
+
+def test_excludes_gitignored(git_superrepo):
+    assert "build/artifact.js" not in _rels(git_superrepo)
+
+
+def test_excludes_gitlink_entry(git_superrepo):
+    # The submodule directory itself must not appear as a file entry.
+    assert "vendored" not in _rels(git_superrepo)
+
+
+def test_submodule_paths_reads_gitmodules(git_superrepo):
+    assert _submodule_paths(git_superrepo) == ["vendored"]

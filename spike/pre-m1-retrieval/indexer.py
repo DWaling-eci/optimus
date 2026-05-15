@@ -18,6 +18,8 @@ Out of scope (per brief): incremental updates, watch-mode, multi-target, shardin
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -50,29 +52,107 @@ MAX_FILE_BYTES = 1 * 1024 * 1024  # Cap per file to keep indexing bounded. 1 MB.
 NOMIC_MODEL_ID = "nomic-ai/CodeRankEmbed"
 
 
+def _read_indexable(file_path: Path) -> str | None:
+    """Return file text, or None if oversized / binary / unreadable.
+
+    Shared by walk_target and git_tracked_files so corpus filtering is identical
+    regardless of enumeration strategy.
+    """
+    try:
+        if file_path.stat().st_size > MAX_FILE_BYTES:
+            return None
+        return file_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None
+
+
 def walk_target(target_root: Path):
     """Yield (file_path, content) for every readable text file under target_root.
 
-    Skips: dotfiles, dot-directories, binary files (UnicodeDecodeError), files
-    over MAX_FILE_BYTES. Yielded paths are absolute.
+    Skips: dotfiles, dot-directories, binary files, files over MAX_FILE_BYTES.
+    Yielded paths are absolute + resolved. Use for non-git targets (test
+    fixtures, plain trees); git working trees use git_tracked_files.
     """
     import os
 
     target_root = target_root.resolve()
     for dirpath, dirnames, filenames in os.walk(target_root):
-        # In-place filter dot-dirs so os.walk doesn't descend into them
+        # In-place filter dot-dirs so os.walk doesn't descend into them.
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         for name in filenames:
             if name.startswith("."):
                 continue
             file_path = Path(dirpath) / name
-            try:
-                if file_path.stat().st_size > MAX_FILE_BYTES:
-                    continue
-                content = file_path.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
+            content = _read_indexable(file_path)
+            if content is None:
                 continue
             yield file_path.resolve(), content
+
+
+def _git_ls_files(repo_dir: Path) -> list[str]:
+    """Tracked file paths within repo_dir (relative to repo_dir, POSIX)."""
+    result = subprocess.run(
+        ["git", "-C", str(repo_dir), "ls-files", "-z"],
+        check=True, capture_output=True, text=True,
+    )
+    return [p for p in result.stdout.split("\0") if p]
+
+
+def _submodule_paths(target_root: Path) -> list[str]:
+    """Submodule paths registered in target_root's .gitmodules (POSIX, relative)."""
+    if not (target_root / ".gitmodules").exists():
+        return []
+    result = subprocess.run(
+        ["git", "-C", str(target_root), "config", "--file", ".gitmodules",
+         "--get-regexp", r"^submodule\..*\.path$"],
+        check=False, capture_output=True, text=True,
+    )
+    paths = []
+    for line in result.stdout.splitlines():
+        # line: "submodule.<name>.path <relpath>"
+        parts = line.split(None, 1)
+        if len(parts) == 2:
+            paths.append(parts[1].strip())
+    return sorted(paths)
+
+
+def git_tracked_files(target_root: Path):
+    """Yield (file_path, content) for every git-tracked text file under target_root.
+
+    target_root may be a submodule superrepo. Enumerates the superrepo's own
+    tracked files plus each initialized submodule's tracked files (per-submodule
+    git ls-files; `git ls-files --recurse-submodules` does not recurse reliably
+    from WSL2). Build output (build/, target/, node_modules/) is gitignored and
+    therefore excluded by construction -- the production-faithful corpus per
+    docs/specs/2026-05-14-spike-1-path-contract-design.md.
+    """
+    target_root = target_root.resolve()
+    submodules = _submodule_paths(target_root)
+    submodule_set = set(submodules)
+
+    # Superrepo's own tracked files, minus the gitlink entries for submodules.
+    for rel in _git_ls_files(target_root):
+        if rel in submodule_set:
+            continue
+        file_path = (target_root / rel).resolve()
+        content = _read_indexable(file_path)
+        if content is None:
+            continue
+        yield file_path, content
+
+    # Each submodule's tracked files, prefixed with the submodule path.
+    for sub in submodules:
+        sub_dir = target_root / sub
+        if not (sub_dir / ".git").exists():
+            # Submodule not initialized -- skip rather than fail the whole build.
+            print(f"[indexer] submodule {sub} not initialized, skipping", file=sys.stderr)
+            continue
+        for rel in _git_ls_files(sub_dir):
+            file_path = (sub_dir / rel).resolve()
+            content = _read_indexable(file_path)
+            if content is None:
+                continue
+            yield file_path, content
 
 
 def chunk_file(content: str, chunk_size: int = DEFAULT_CHUNK_SIZE):
