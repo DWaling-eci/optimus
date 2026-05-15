@@ -125,6 +125,10 @@ def git_tracked_files(target_root: Path):
     from WSL2). Build output (build/, target/, node_modules/) is gitignored and
     therefore excluded by construction -- the production-faithful corpus per
     docs/specs/2026-05-14-spike-1-path-contract-design.md.
+
+    NOTE: unlike walk_target, this includes tracked dotfiles and
+    dot-directories (.gitignore, .github/, .cursor/, etc.) -- git-tracked means
+    the whole committed corpus, not a filtered view of it.
     """
     target_root = target_root.resolve()
     submodules = _submodule_paths(target_root)

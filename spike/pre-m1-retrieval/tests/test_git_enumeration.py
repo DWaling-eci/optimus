@@ -78,3 +78,15 @@ def test_excludes_gitlink_entry(git_superrepo):
 
 def test_submodule_paths_reads_gitmodules(git_superrepo):
     assert _submodule_paths(git_superrepo) == ["vendored"]
+
+
+def test_exact_tracked_set(git_superrepo):
+    """The enumerated set is exactly the tracked files -- tracked dotfiles
+    (.gitignore, .gitmodules) included, gitlink/untracked/gitignored excluded."""
+    expected = {
+        "root_tracked.py",
+        ".gitignore",
+        ".gitmodules",
+        "vendored/sub_tracked.py",
+    }
+    assert _rels(git_superrepo) == expected
