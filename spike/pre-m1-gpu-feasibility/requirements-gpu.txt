@@ -28,7 +28,7 @@ colbert-ai>=0.2.20
 transformers>=4.41.0,<5
 einops>=0.7.0
 # Explicit +cu121 local tag forces resolution from the pytorch cu121 index.
-torch==2.5.1+cu121
+torch==2.13.0
 # Cap numpy to <3 (torch 2.5.x is built against numpy 2.x; numpy 3 not supported)
 numpy>=1.26.0,<3
 psutil>=5.9.0
